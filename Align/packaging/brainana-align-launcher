@@ -1,0 +1,218 @@
+#!/bin/bash
+set -euo pipefail
+
+APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+RES="$APP_ROOT/Resources"
+VERSION="0.16.0-parity.4"
+BUILD_ID="parity-4"
+
+show_error() {
+  local message="$1"
+  /usr/bin/osascript -e 'on run a' -e 'display alert "Brainana Align" message (item 1 of a) as critical buttons {"OK"}' -e 'end run' -- "$message" >/dev/null 2>&1 || true
+}
+
+on_error() {
+  local rc=$?
+  local line="$1"
+  show_error "The launcher stopped unexpectedly at line $line (error $rc). See the launch log in ~/Library/Application Support/Brainana Align/logs/."
+  exit "$rc"
+}
+trap 'on_error $LINENO' ERR
+
+ARCH="$(/usr/bin/uname -m)"
+case "$ARCH" in
+  arm64) NODE="$RES/runtime/darwin-arm64/node" ;;
+  x86_64) NODE="$RES/runtime/darwin-x64/node" ;;
+  *) show_error "Unsupported Mac architecture: $ARCH"; exit 31 ;;
+esac
+[[ -x "$NODE" ]] || { show_error "Bundled runtime missing. Reinstall the complete application."; exit 33; }
+
+SUPPORT="$HOME/Library/Application Support/Brainana Align"
+CACHE="$HOME/Library/Caches/Brainana Align/$VERSION"
+LOGS="$SUPPORT/logs"
+PROFILES="$SUPPORT/profiles.tsv"
+mkdir -p "$SUPPORT" "$CACHE" "$LOGS"
+touch "$PROFILES"
+chmod 600 "$PROFILES"
+LOG_FILE="$LOGS/launch-$(/bin/date +%Y%m%d-%H%M%S)-$$.log"
+exec > >(tee -a "$LOG_FILE") 2>&1
+
+ask() {
+  /usr/bin/osascript -e 'on run a' -e 'text returned of (display dialog (item 1 of a) default answer (item 2 of a) with title "Brainana Align")' -e 'end run' -- "$1" "${2:-}"
+}
+choose_mode() {
+  /usr/bin/osascript -e 'set p to choose from list {"Local files on this Mac", "Remote workstation"} with title "Brainana Align" with prompt "Choose how to access data:" default items {"Local files on this Mac"}' -e 'if p is false then error number -128' -e 'item 1 of p'
+}
+choose_folder() {
+  /usr/bin/osascript -e 'POSIX path of (choose folder with prompt "Choose the folder containing MRI and CT data")'
+}
+notice() {
+  /usr/bin/osascript -e 'on run a' -e 'display dialog (item 1 of a) with title "Brainana Align" buttons {"Continue"} default button "Continue"' -e 'end run' -- "$1" >/dev/null
+}
+freeport() {
+  local p="$1"
+  while /usr/sbin/lsof -nP -iTCP:"$p" -sTCP:LISTEN >/dev/null 2>&1; do p=$((p+1)); done
+  echo "$p"
+}
+choose_profile() {
+  local choices_file="$CACHE/profile-choices-$$.txt"
+  /usr/bin/awk -F '\t' 'NF && $1 != "" {print $1}' "$PROFILES" > "$choices_file"
+  printf '%s\n' 'Add a new connection...' >> "$choices_file"
+  /usr/bin/osascript - "$choices_file" <<'APPLESCRIPT'
+on run argv
+  set choicesFile to POSIX file (item 1 of argv)
+  set rawText to read choicesFile as «class utf8»
+  set rawChoices to paragraphs of rawText
+  set choices to {}
+  repeat with c in rawChoices
+    set t to c as text
+    if t is not "" then set end of choices to t
+  end repeat
+  set p to choose from list choices with title "Brainana Align" with prompt "Choose a connection:" default items {item 1 of choices}
+  if p is false then error number -128
+  return item 1 of p
+end run
+APPLESCRIPT
+  local rc=$?
+  rm -f "$choices_file"
+  return "$rc"
+}
+shell_quote() {
+  printf "'%s'" "$(printf '%s' "$1" | /usr/bin/sed "s/'/'\\''/g")"
+}
+open_interactive_ssh() {
+  local target="$1"
+  local socket="$2"
+  local status_file="$CACHE/ssh-status-$$"
+  rm -f "$status_file" "$socket"
+  notice "A Terminal window will open for SSH authentication to $target. Complete any key passphrase, Duo, or keyboard-interactive prompts there. Brainana Align will continue automatically after the connection succeeds."
+  local cmd
+  cmd="/usr/bin/ssh -M -S $(shell_quote "$socket") -o ControlPersist=600 -o ExitOnForwardFailure=yes -fNT $(shell_quote "$target"); rc=\$?; echo \$rc > $(shell_quote "$status_file")"
+  /usr/bin/osascript - "$cmd" <<'APPLESCRIPT'
+on run argv
+  tell application "Terminal"
+    activate
+    do script (item 1 of argv)
+  end tell
+end run
+APPLESCRIPT
+
+  local i=0
+  while [[ $i -lt 1200 ]]; do
+    if /usr/bin/ssh -S "$socket" -O check "$target" >/dev/null 2>&1; then
+      rm -f "$status_file"
+      return 0
+    fi
+    if [[ -f "$status_file" ]]; then
+      local rc
+      rc="$(cat "$status_file" 2>/dev/null || echo 1)"
+      rm -f "$status_file"
+      show_error "SSH connection to $target failed (error $rc). Review the Terminal window and launch log, then try again."
+      return 1
+    fi
+    /bin/sleep 0.25
+    i=$((i+1))
+  done
+  show_error "SSH authentication did not complete. Review the Terminal window and try again."
+  return 1
+}
+
+MODE_PICK="$(choose_mode)" || exit 0
+MODE="local"
+LABEL="This Mac"
+ROOT=""
+TARGET=""
+SOCKET=""
+PORT_CANDIDATE=$((20000 + $(/usr/bin/od -An -N4 -tu4 /dev/urandom | tr -d ' ') % 40000))
+
+if [[ "$MODE_PICK" == "Local files on this Mac" ]]; then
+  ROOT="$(choose_folder)" || exit 0
+  ROOT="${ROOT%/}"
+  PORT="$(ask 'Browser port:' '5173')" || exit 0
+else
+  MODE="remote"
+  LABEL="Remote workstation"
+  PICK="$(choose_profile)" || exit 0
+  if [[ "$PICK" != "Add a new connection..." ]]; then
+    LINE="$(/usr/bin/awk -F '\t' -v n="$PICK" '$1==n{print;exit}' "$PROFILES")"
+    [[ -n "$LINE" ]] || { show_error "The selected connection profile could not be found."; exit 36; }
+    IFS=$'\t' read -r NAME USER HOST ROOT <<EOF_PROFILE
+$LINE
+EOF_PROFILE
+  else
+    NAME="$(ask 'Connection name:' 'Workstation')" || exit 0
+    USER="$(ask 'Username:' '')" || exit 0
+    HOST="$(ask 'Hostname:' '')" || exit 0
+    ROOT="$(ask 'Remote data root:' '')" || exit 0
+    [[ -n "$NAME" && -n "$USER" && -n "$HOST" && -n "$ROOT" ]] || { show_error "Connection name, username, hostname, and remote data root are all required."; exit 37; }
+    printf '%s\t%s\t%s\t%s\n' "$NAME" "$USER" "$HOST" "$ROOT" >> "$PROFILES"
+  fi
+  TARGET="$USER@$HOST"
+  PORT="$(ask 'Browser port:' "$PORT_CANDIDATE")" || exit 0
+  SOCKET="$CACHE/ssh-control-$$"
+  echo "Opening SSH connection to $TARGET..."
+  open_interactive_ssh "$TARGET" "$SOCKET"
+fi
+
+[[ "$PORT" =~ ^[0-9]+$ ]] || { show_error "Browser port must be a number."; exit 35; }
+PORT="$(freeport "$PORT")"
+
+echo "Brainana Align"
+echo "Version: $VERSION"
+echo "Build ID: $BUILD_ID"
+echo "Launcher: $0"
+echo "Mode: $MODE"
+echo "Profile: ${NAME:-$LABEL}"
+echo "Browser URL: http://localhost:$PORT"
+echo "Browser port: $PORT"
+echo "Local runtime path: $RES/runtime"
+echo "Cache path: $CACHE"
+echo "Local Node path: $NODE"
+echo "Mac architecture: $ARCH"
+echo "Data root: $ROOT"
+echo "Launch log: $LOG_FILE"
+if [[ "$MODE" == "remote" ]]; then
+  echo "Remote host: $TARGET"
+  echo "Remote data root: $ROOT"
+  echo "SSH control socket path: $SOCKET"
+  echo "Connection status: connected"
+fi
+
+ARGS=(--host 127.0.0.1 --port "$PORT" --root "$ROOT" --mode "$MODE" --label "$LABEL" --cache "$CACHE")
+[[ "$MODE" == "remote" ]] && ARGS+=(--ssh-target "$TARGET" --control-socket "$SOCKET")
+
+"$NODE" "$RES/runtime/server.mjs" "${ARGS[@]}" &
+PID=$!
+cleanup() {
+  kill "$PID" 2>/dev/null || true
+  if [[ -n "${SOCKET:-}" && -n "${TARGET:-}" ]]; then
+    /usr/bin/ssh -S "$SOCKET" -O exit "$TARGET" >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup EXIT
+
+URL="http://localhost:$PORT"
+echo "Requesting default browser launch immediately: $URL"
+(
+  /usr/bin/open "$URL" >/dev/null 2>&1
+) &
+OPEN_PID=$!
+
+# Keep readiness checking for diagnostics, but do not hold the browser closed while
+# the bundled server starts. A cold browser launch normally takes longer than the
+# server needs to begin listening, so the first page request reaches the live app.
+for _ in $(seq 1 120); do
+  if /usr/bin/curl --connect-timeout 0.2 --max-time 0.5 -fsS "$URL/api/health" >/dev/null 2>&1; then
+    echo "Local server ready; browser launch was requested with PID $OPEN_PID."
+    wait "$PID"
+    exit $?
+  fi
+  if ! kill -0 "$PID" 2>/dev/null; then
+    wait "$PID" || true
+    show_error "The local Brainana Align server stopped before becoming ready. See $LOG_FILE for details."
+    exit 34
+  fi
+  /bin/sleep 0.1
+done
+show_error "The local Brainana Align server did not become ready. The browser was opened, but the app could not start. See $LOG_FILE for details."
+exit 34

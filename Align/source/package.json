@@ -1,0 +1,22 @@
+{
+  "name": "brainana-align",
+  "private": true,
+  "version": "0.16.0-parity.4",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "check": "npm run build && node ../tests/server-smoke.mjs",
+    "test:server": "node ../tests/server-smoke.mjs"
+  },
+  "dependencies": {
+    "@niivue/niivue": "^0.69.0",
+    "fflate": "^0.8.2",
+    "nifti-reader-js": "^0.8.0"
+  },
+  "devDependencies": {
+    "typescript": "~6.0.2",
+    "vite": "^8.1.1"
+  }
+}
