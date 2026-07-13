@@ -16,4 +16,11 @@
   cursor: move;
 }
 
-.marker-overlay.window-defining{pointer-events:auto;cursor:crosshair}.optimization-window{fill:rgba(68,215,255,.12);stroke:#44d7ff;stroke-width:2px;stroke-dasharray:7 5;pointer-events:none}.optimization-window-controls{background:#0c1722;border:1px solid #2f465e;border-radius:6px;margin:8px 0;padding:8px}.optimization-window-controls button{margin-top:5px}
+.marker-overlay.window-defining{pointer-events:none}.optimization-window-controls{background:#0c1722;border:1px solid #2f465e;border-radius:6px;margin:8px 0;padding:8px}.optimization-window-controls button{margin-top:5px}
+
+.optimization-window-hit-surface{pointer-events:all;cursor:crosshair}
+
+.optimization-window-layer{position:absolute;inset:0;z-index:4;pointer-events:none;overflow:hidden}
+.optimization-window-layer.active{pointer-events:auto;cursor:crosshair;touch-action:none}
+.optimization-window-box{position:absolute;border:2px dashed #44d7ff;background:rgba(68,215,255,.12);pointer-events:none}
+.optimization-window-box.preview{background:rgba(68,215,255,.2)}

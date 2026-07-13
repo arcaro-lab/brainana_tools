@@ -1,5 +1,7 @@
-# Brainana Align 0.16.0-parity.6
+# Brainana Align 0.16.0-parity.12
 
-Open **Brainana Align.app**. The application is self-contained and uses the macOS default browser. No Node, npm, Python, Homebrew, NVM, Conda, or other installation is required.
+This is the complete self-contained macOS release. No Node, npm, Python, Homebrew, NVM, Conda, or other runtime installation is required.
 
-This release fixes the intermittent `localhost refused to connect` page seen when the default browser was closed. The launcher now opens the browser immediately after the bundled local server becomes ready. Registration and export calculations are unchanged.
+This release replaces the optimization-window input system with one shared interaction layer for all six MRI and CT slice views and corrects constrained-sampling behavior.
+
+See `Documentation/CHANGELOG-0.16.0-parity.12.md` and `Documentation/VALIDATION-0.16.0-parity.12.md`.

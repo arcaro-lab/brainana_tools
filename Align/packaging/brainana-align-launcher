@@ -3,8 +3,8 @@ set -euo pipefail
 
 APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 RES="$APP_ROOT/Resources"
-VERSION="0.16.0-parity.6"
-BUILD_ID="parity-6"
+VERSION="0.16.0-parity.11"
+BUILD_ID="parity-11"
 
 show_error() {
   local message="$1"
@@ -48,11 +48,6 @@ choose_folder() {
 }
 notice() {
   /usr/bin/osascript -e 'on run a' -e 'display dialog (item 1 of a) with title "Brainana Align" buttons {"Continue"} default button "Continue"' -e 'end run' -- "$1" >/dev/null
-}
-freeport() {
-  local p="$1"
-  while /usr/sbin/lsof -nP -iTCP:"$p" -sTCP:LISTEN >/dev/null 2>&1; do p=$((p+1)); done
-  echo "$p"
 }
 choose_profile() {
   local choices_file="$CACHE/profile-choices-$$.txt"
@@ -123,12 +118,10 @@ LABEL="This Mac"
 ROOT=""
 TARGET=""
 SOCKET=""
-PORT_CANDIDATE=$((20000 + $(/usr/bin/od -An -N4 -tu4 /dev/urandom | tr -d ' ') % 40000))
 
 if [[ "$MODE_PICK" == "Local files on this Mac" ]]; then
   ROOT="$(choose_folder)" || exit 0
   ROOT="${ROOT%/}"
-  PORT="$(ask 'Browser port:' '5173')" || exit 0
 else
   MODE="remote"
   LABEL="Remote workstation"
@@ -148,18 +141,9 @@ EOF_PROFILE
     printf '%s\t%s\t%s\t%s\n' "$NAME" "$USER" "$HOST" "$ROOT" >> "$PROFILES"
   fi
   TARGET="$USER@$HOST"
-  PORT="$(ask 'Browser port:' "$PORT_CANDIDATE")" || exit 0
   SOCKET="$CACHE/ssh-control-$$"
   echo "Opening SSH connection to $TARGET..."
   open_interactive_ssh "$TARGET" "$SOCKET"
-fi
-
-[[ "$PORT" =~ ^[0-9]+$ ]] || { show_error "Browser port must be a number."; exit 35; }
-if /usr/sbin/lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
-  NEXT_PORT="$(freeport "$((PORT+1))")"
-  PORT_CHOICE="$(/usr/bin/osascript -e 'on run a' -e 'set p to button returned of (display dialog ("Port " & item 1 of a & " is already in use. Use port " & item 2 of a & " instead?") with title "Brainana Align" buttons {"Cancel", "Use Available Port"} default button "Use Available Port")' -e 'end run' -- "$PORT" "$NEXT_PORT")" || exit 0
-  [[ "$PORT_CHOICE" == "Use Available Port" ]] || exit 0
-  PORT="$NEXT_PORT"
 fi
 
 echo "Brainana Align"
@@ -168,8 +152,8 @@ echo "Build ID: $BUILD_ID"
 echo "Launcher: $0"
 echo "Mode: $MODE"
 echo "Profile: ${NAME:-$LABEL}"
-echo "Browser URL: http://localhost:$PORT"
-echo "Browser port: $PORT"
+echo "Browser URL: assigned automatically after server start"
+echo "Browser port: assigned automatically by macOS"
 echo "Local runtime path: $RES/runtime"
 echo "Cache path: $CACHE"
 echo "Local Node path: $NODE"
@@ -183,30 +167,90 @@ if [[ "$MODE" == "remote" ]]; then
   echo "Connection status: connected"
 fi
 
-ARGS=(--host 127.0.0.1 --port "$PORT" --root "$ROOT" --mode "$MODE" --label "$LABEL" --cache "$CACHE")
+# Each launch receives a private handshake directory. This prevents stale files,
+# concurrent launches, and prior browser sessions from affecting port discovery.
+UMASK_OLD="$(umask)"
+umask 077
+LAUNCH_TOKEN="$(/bin/date +%Y%m%d-%H%M%S)-$$-${RANDOM:-0}"
+LAUNCH_DIR="$CACHE/launch-$LAUNCH_TOKEN"
+/bin/mkdir -p "$LAUNCH_DIR"
+umask "$UMASK_OLD"
+PORT_FILE="$LAUNCH_DIR/port.txt"
+ERROR_FILE="$LAUNCH_DIR/server-error.txt"
+rm -f "$PORT_FILE" "$ERROR_FILE"
+
+# Clean only abandoned handshake directories. Active launches have a live PID
+# marker and are never touched.
+/usr/bin/find "$CACHE" -maxdepth 1 -type d -name 'launch-*' -mtime +2 -exec /bin/rm -rf {} + >/dev/null 2>&1 || true
+
+ARGS=(--host 127.0.0.1 --port 0 --port-file "$PORT_FILE" --error-file "$ERROR_FILE" --root "$ROOT" --mode "$MODE" --label "$LABEL" --cache "$CACHE")
 [[ "$MODE" == "remote" ]] && ARGS+=(--ssh-target "$TARGET" --control-socket "$SOCKET")
 
 "$NODE" "$RES/runtime/server.mjs" "${ARGS[@]}" &
 PID=$!
+printf '%s\n' "$PID" > "$LAUNCH_DIR/server.pid"
 cleanup() {
   kill "$PID" 2>/dev/null || true
+  /bin/rm -rf "$LAUNCH_DIR"
   if [[ -n "${SOCKET:-}" && -n "${TARGET:-}" ]]; then
     /usr/bin/ssh -S "$SOCKET" -O exit "$TARGET" >/dev/null 2>&1 || true
   fi
 }
 trap cleanup EXIT
 
-URL="http://localhost:$PORT"
-echo "Waiting briefly for the bundled server before opening the default browser: $URL"
+# macOS chooses and binds the port atomically. Wait for the server to publish
+# the exact bound port. Use only Bash arithmetic, not nonstandard utilities
+# such as seq. The 30-second bound tolerates cold starts and transient system
+# load while still failing clearly if the process is unhealthy.
+echo "Waiting for the bundled server to publish its assigned browser port..."
+PORT=""
+ATTEMPT=0
+while [[ $ATTEMPT -lt 600 ]]; do
+  if [[ -s "$PORT_FILE" ]]; then
+    PORT="$(/usr/bin/tr -d '[:space:]' < "$PORT_FILE")"
+    if [[ "$PORT" =~ ^[0-9]+$ ]] && [[ "$PORT" -ge 1 ]] && [[ "$PORT" -le 65535 ]]; then
+      break
+    fi
+    PORT=""
+  fi
+  if [[ -s "$ERROR_FILE" ]]; then
+    SERVER_ERROR="$(/bin/cat "$ERROR_FILE" 2>/dev/null || true)"
+    show_error "The local Brainana Align server could not start: ${SERVER_ERROR:-unknown server error}. See $LOG_FILE for details."
+    exit 34
+  fi
+  if ! kill -0 "$PID" 2>/dev/null; then
+    wait "$PID" || true
+    SERVER_ERROR="$(/bin/cat "$ERROR_FILE" 2>/dev/null || true)"
+    show_error "The local Brainana Align server stopped before publishing a browser port. ${SERVER_ERROR:-See the launch log for details.} Log: $LOG_FILE"
+    exit 34
+  fi
+  /bin/sleep 0.05
+  ATTEMPT=$((ATTEMPT + 1))
+done
 
-# Wait until the lightweight health endpoint is live before asking macOS to open
-# the URL. This prevents a cold browser launch from reaching localhost before the
-# server is listening, while adding only the actual server startup time.
+if [[ -z "$PORT" ]]; then
+  show_error "The local Brainana Align server is still running but did not publish a browser port within 30 seconds. See $LOG_FILE for details."
+  exit 34
+fi
+
+# Use the exact IPv4 address that the server bound. This avoids browser-specific
+# localhost resolution differences between IPv4 and IPv6.
+URL="http://127.0.0.1:$PORT"
+echo "Browser URL: $URL"
+echo "Browser port: $PORT"
+echo "Waiting for the matching local health endpoint..."
+
 READY=0
-for _ in $(seq 1 120); do
-  if /usr/bin/curl --connect-timeout 0.2 --max-time 0.5 -fsS "$URL/api/health" >/dev/null 2>&1; then
+ATTEMPT=0
+while [[ $ATTEMPT -lt 400 ]]; do
+  if /usr/bin/curl --noproxy '*' --connect-timeout 0.25 --max-time 0.75 -fsS "$URL/api/health" >/dev/null 2>&1; then
     READY=1
     break
+  fi
+  if [[ -s "$ERROR_FILE" ]]; then
+    SERVER_ERROR="$(/bin/cat "$ERROR_FILE" 2>/dev/null || true)"
+    show_error "The local Brainana Align server reported an error before becoming ready: ${SERVER_ERROR:-unknown server error}. See $LOG_FILE for details."
+    exit 34
   fi
   if ! kill -0 "$PID" 2>/dev/null; then
     wait "$PID" || true
@@ -214,17 +258,16 @@ for _ in $(seq 1 120); do
     exit 34
   fi
   /bin/sleep 0.05
+  ATTEMPT=$((ATTEMPT + 1))
 done
 
 if [[ "$READY" -ne 1 ]]; then
-  show_error "The local Brainana Align server did not become ready. See $LOG_FILE for details."
+  show_error "The local Brainana Align server did not become ready within 20 seconds. See $LOG_FILE for details."
   exit 34
 fi
 
-echo "Local server ready. Opening the default browser: $URL"
-(
-  /usr/bin/open "$URL" >/dev/null 2>&1
-) &
+echo "Local server ready. Opening the macOS default browser: $URL"
+/usr/bin/open "$URL" >/dev/null 2>&1 &
 OPEN_PID=$!
 echo "Default-browser launch requested with PID $OPEN_PID."
 

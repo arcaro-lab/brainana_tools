@@ -8,7 +8,8 @@ import { fileURLToPath } from 'node:url'
 import { VERSION, BUILD_ID, SOURCE_BASE, BEHAVIOR_REFERENCE } from './version.mjs'
 const here=path.dirname(fileURLToPath(import.meta.url)); const args=process.argv.slice(2)
 const arg=(n,f='')=>{const i=args.indexOf(n);return i>=0&&args[i+1]?args[i+1]:f}
-const host=arg('--host','127.0.0.1'), port=Number(arg('--port','4173')), mode=arg('--mode','local')
+const host=arg('--host','127.0.0.1'), requestedPort=Number(arg('--port','0')), portFile=arg('--port-file',''), errorFile=arg('--error-file',''), mode=arg('--mode','local')
+let actualPort=requestedPort
 const rootRaw=arg('--root',process.env.HOME||process.cwd()), root=mode==='local'?path.resolve(rootRaw):path.posix.normalize(rootRaw)
 const label=arg('--label',mode==='remote'?'Remote workstation':'This Mac'), sshTarget=arg('--ssh-target',''), controlSocket=arg('--control-socket','')
 const dist=path.join(here,'dist'), cacheRoot=arg('--cache',path.join(os.homedir(),'Library','Caches','Brainana Align',VERSION))
@@ -37,7 +38,7 @@ const mime=p=>p.endsWith('.html')?'text/html; charset=utf-8':p.endsWith('.js')?'
 const server=http.createServer(async(req,res)=>{try{const u=new URL(req.url,'http://localhost')
  if(u.pathname==='/api/health'){const connected=sshConnected();return json(res,connected?200:503,{ok:connected,app:'Brainana Align',version:VERSION,buildId:BUILD_ID,mode,connection:mode==='remote'?(connected?'ssh-connected':'ssh-disconnected'):'local'})}
  if(u.pathname==='/api/version')return json(res,200,{version:VERSION,buildId:BUILD_ID,sourceBase:SOURCE_BASE,behaviorReference:BEHAVIOR_REFERENCE})
- if(u.pathname==='/api/runtime')return json(res,200,{mode,label,root,port,host,version:VERSION,buildId:BUILD_ID,sshTarget:mode==='remote'?sshTarget:undefined,controlSocket:mode==='remote'?controlSocket:undefined,cacheRoot})
+ if(u.pathname==='/api/runtime')return json(res,200,{mode,label,root,port:actualPort,host,version:VERSION,buildId:BUILD_ID,sshTarget:mode==='remote'?sshTarget:undefined,controlSocket:mode==='remote'?controlSocket:undefined,cacheRoot})
  if(u.pathname==='/api/config')return json(res,200,{enabled:true,mode,label,rootName:path.posix.basename(root)||root,remote:mode==='remote'})
  if(u.pathname==='/api/list')return json(res,200,await list(u.searchParams.get('path')||'',false))
  if(u.pathname==='/api/save-list')return json(res,200,await list(u.searchParams.get('path')||'',true))
@@ -46,4 +47,19 @@ const server=http.createServer(async(req,res)=>{try{const u=new URL(req.url,'htt
  if(u.pathname==='/api/file'){const rel=u.searchParams.get('path')||'';if(!isAllowed(rel))return text(res,415,'Unsupported file type');if(mode==='local'){const{resolved}=safeLocal(rel);const st=await fs.promises.stat(resolved);if(!st.isFile())return text(res,400,'Not a file');res.writeHead(200,{'content-type':'application/octet-stream','content-length':st.size,'content-disposition':`attachment; filename="${path.basename(resolved).replaceAll('"','')}"`});return fs.createReadStream(resolved).pipe(res)}const{resolved}=safeRemote(rel);const size=Number((await remoteCapture(`stat -c %s ${q(resolved)}`)).trim());res.writeHead(200,{'content-type':'application/octet-stream','content-length':size,'content-disposition':`attachment; filename="${path.posix.basename(resolved).replaceAll('"','')}"`});const p=spawn('/usr/bin/ssh',[...sshArgs(),`cat ${q(resolved)}`],{stdio:['ignore','pipe','pipe']});const stop=()=>{if(!p.killed)p.kill('SIGTERM')};req.on('aborted',stop);res.on('close',()=>{if(!res.writableEnded)stop()});p.stdout.pipe(res);p.stderr.on('data',d=>console.error(String(d)));return}
  let rel=decodeURIComponent(u.pathname==='/'?'/index.html':u.pathname), file=path.resolve(dist,'.'+rel);if(file!==dist&&!file.startsWith(dist+path.sep))return text(res,403,'Forbidden');try{if((await fs.promises.stat(file)).isDirectory())file=path.join(file,'index.html')}catch{file=path.join(dist,'index.html')}const st=await fs.promises.stat(file);res.writeHead(200,{'content-type':mime(file),'content-length':st.size,'cache-control':file.endsWith('index.html')||file.includes('remote-export-')?'no-store':'public, max-age=31536000, immutable'});fs.createReadStream(file).pipe(res)
  }catch(e){console.error(e);json(res,500,{error:e instanceof Error?e.message:String(e)})}})
-server.listen(port,host,()=>console.log(`Brainana Align ${VERSION} (${BUILD_ID}) ${mode} at http://${host}:${port}`))
+const publishStartupError=(error)=>{
+ const message=error instanceof Error?(error.stack||error.message):String(error)
+ console.error(message)
+ if(errorFile){try{fs.mkdirSync(path.dirname(errorFile),{recursive:true});const tmp=`${errorFile}.tmp-${process.pid}`;fs.writeFileSync(tmp,message+'\n',{mode:0o600});fs.renameSync(tmp,errorFile)}catch(writeError){console.error('Unable to publish startup error:',writeError)}}
+}
+server.on('error',error=>{publishStartupError(error);process.exitCode=1})
+process.on('uncaughtException',error=>{publishStartupError(error);process.exit(1)})
+process.on('unhandledRejection',error=>{publishStartupError(error);process.exit(1)})
+server.listen(requestedPort,host,()=>{
+ try{
+  const address=server.address(); actualPort=typeof address==='object'&&address?address.port:requestedPort
+  if(!Number.isInteger(actualPort)||actualPort<1||actualPort>65535)throw Error(`Invalid bound port: ${actualPort}`)
+  if(portFile){const tmp=`${portFile}.tmp-${process.pid}`;fs.mkdirSync(path.dirname(portFile),{recursive:true});fs.writeFileSync(tmp,String(actualPort)+'\n',{mode:0o600});fs.renameSync(tmp,portFile)}
+  console.log(`Brainana Align ${VERSION} (${BUILD_ID}) ${mode} at http://${host}:${actualPort}`)
+ }catch(error){publishStartupError(error);server.close(()=>process.exit(1))}
+})

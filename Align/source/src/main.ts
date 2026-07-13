@@ -12,7 +12,7 @@ type Loaded = { name: string; raw: RawNifti; nvImage: NVImage; sourceFiles: stri
 type WindowBounds = { min: Vec3; max: Vec3 }
 type OptimizationWindows = Record<Modality, Partial<Record<Plane, WindowBounds>>>
 
-type View = { nv: Niivue; modality: Modality; plane: Plane; canvas: HTMLCanvasElement; overlay: SVGSVGElement }
+type View = { nv: Niivue; modality: Modality; plane: Plane; canvas: HTMLCanvasElement; overlay: SVGSVGElement; windowLayer: HTMLDivElement }
 type ReviewView = { nv: Niivue; plane: Plane; canvas: HTMLCanvasElement; overlay: SVGSVGElement }
 
 const planeTypes: Record<Plane, SLICE_TYPE> = {
@@ -24,7 +24,7 @@ const planeTypes: Record<Plane, SLICE_TYPE> = {
 const app = document.querySelector<HTMLDivElement>('#app')!
 app.innerHTML = `
 <header class="topbar">
-  <div class="brand">Brainana Align <span>v0.16.0-parity.6</span></div>
+  <div class="brand">Brainana Align <span>v0.16.0-parity.12</span></div>
   <div class="workflow-group image-loads">
     <label class="load compact-load" title="Load an MRI volume"><input id="mri-file" type="file" multiple accept=".nii,.nii.gz,.hdr,.img,.img.gz,.head,.brik,.brik.gz,.mgh,.mgz,.nrrd,.nhdr,.mif,.mha,.mhd,.raw,.v,.v16,.vmr,.npy,.npz,.fib,.src,.gz,application/gzip,application/x-gzip,application/octet-stream"><strong id="mri-name">Load MRI</strong></label>
     <label class="load compact-load" title="Load a CT volume"><input id="ct-file" type="file" multiple accept=".nii,.nii.gz,.hdr,.img,.img.gz,.head,.brik,.brik.gz,.mgh,.mgz,.nrrd,.nhdr,.mif,.mha,.mhd,.raw,.v,.v16,.vmr,.npy,.npz,.fib,.src,.gz,application/gzip,application/x-gzip,application/octet-stream"><strong id="ct-name">Load CT</strong></label>
@@ -48,7 +48,7 @@ app.innerHTML = `
     <div class="column-head"></div><div class="column-head">Sagittal</div><div class="column-head">Coronal</div><div class="column-head">Axial</div>
     ${(['mri','ct'] as Modality[]).map(modality => `
       <div class="row-head"><strong>${modality.toUpperCase()}</strong><small id="${modality}-coords">x — y — z —</small></div>
-      ${(['sagittal','coronal','axial'] as Plane[]).map(plane => `<div class="view-card" data-modality="${modality}" data-plane="${plane}"><canvas id="${modality}-${plane}"></canvas><svg class="marker-overlay" id="${modality}-${plane}-overlay"></svg></div>`).join('')}
+      ${(['sagittal','coronal','axial'] as Plane[]).map(plane => `<div class="view-card" data-modality="${modality}" data-plane="${plane}"><canvas id="${modality}-${plane}"></canvas><svg class="marker-overlay" id="${modality}-${plane}-overlay"></svg><div class="optimization-window-layer" id="${modality}-${plane}-window-layer"></div></div>`).join('')}
     `).join('')}
     <div class="row-head review-head"><strong>OVERLAY</strong><small id="review-label">Fit a transform to review alignment</small></div>
     ${(['sagittal','coronal','axial'] as Plane[]).map(plane => `<div class="view-card review-card" data-plane="${plane}"><canvas id="review-${plane}"></canvas><svg class="marker-overlay" id="review-${plane}-overlay"></svg><div class="review-placeholder">Fit a rigid transform to display the aligned overlay</div></div>`).join('')}
@@ -175,7 +175,7 @@ const suppressCrosshairSync: Record<Modality, boolean> = { mri: false, ct: false
 let reviewImages: { fixed: NVImage; moving: NVImage; fixedModality: Modality; movingModality: Modality } | null = null
 let optimizationWindows: OptimizationWindows = { mri: {}, ct: {} }
 let definingWindows = false
-let windowDrag: { view: View; startMm: Vec3; preview: SVGRectElement } | null = null
+let windowDrag: { view: View; startMm: Vec3; preview: HTMLDivElement } | null = null
 
 function setStatus(text: string, error = false) { statusEl.textContent = text; statusEl.classList.toggle('error', error) }
 function snapshot() { history.push(structuredClone(landmarks)); if (history.length > 40) history.shift() }
@@ -183,6 +183,30 @@ function snapshot() { history.push(structuredClone(landmarks)); if (history.leng
 const wheelSliceAccumulator = new WeakMap<HTMLCanvasElement, number>()
 type HoveredView = { canvas: HTMLCanvasElement; nv: Niivue; redrawMarkers: () => void }
 let hoveredView: HoveredView | null = null
+const projectionRefreshFrames = new WeakMap<HTMLCanvasElement, number>()
+
+function scheduleProjectionRefresh(canvas: HTMLCanvasElement, redraw: () => void) {
+  const previous = projectionRefreshFrames.get(canvas)
+  if (previous !== undefined) cancelAnimationFrame(previous)
+  let remaining = 3
+  const refresh = () => {
+    redraw()
+    remaining -= 1
+    if (remaining > 0) projectionRefreshFrames.set(canvas, requestAnimationFrame(refresh))
+    else projectionRefreshFrames.delete(canvas)
+  }
+  projectionRefreshFrames.set(canvas, requestAnimationFrame(refresh))
+}
+
+function installProjectionRefresh(canvas: HTMLCanvasElement, redraw: () => void) {
+  // NiiVue updates its camera after processing wheel and drag events. Reproject SVG
+  // annotations for a few animation frames so markers and windows track zoom and pan.
+  canvas.addEventListener('wheel', () => scheduleProjectionRefresh(canvas, redraw), { passive: true })
+  canvas.addEventListener('pointermove', event => {
+    if (event.buttons) scheduleProjectionRefresh(canvas, redraw)
+  }, { passive: true })
+  canvas.addEventListener('pointerup', () => scheduleProjectionRefresh(canvas, redraw), { passive: true })
+}
 
 function installHoverKeyboardPan(canvas: HTMLCanvasElement, nv: Niivue, redrawMarkers: () => void) {
   const target: HoveredView = { canvas, nv, redrawMarkers }
@@ -269,8 +293,9 @@ function setupViews() {
     for (const plane of ['sagittal','coronal','axial'] as Plane[]) {
       const canvas = document.querySelector<HTMLCanvasElement>(`#${modality}-${plane}`)!
       const overlay = document.querySelector<SVGSVGElement>(`#${modality}-${plane}-overlay`)!
+      const windowLayer = document.querySelector<HTMLDivElement>(`#${modality}-${plane}-window-layer`)!
       const nv = new Niivue({ show3Dcrosshair: false, isColorbar: false })
-      views[modality][plane] = { nv, modality, plane, canvas, overlay }
+      views[modality][plane] = { nv, modality, plane, canvas, overlay, windowLayer }
       nv.attachToCanvas(canvas)
       nv.setSliceMM(true)
       nv.setDragMode('pan')
@@ -279,7 +304,9 @@ function setupViews() {
       nv.onLocationChange = (loc: any) => handleLocation(modality, loc?.mm, plane)
       installWheelZoomAndSlice(canvas, nv, () => loaded[modality]?.raw.dims ?? null, plane, mm => gotoMm(modality, mm))
       installHoverKeyboardPan(canvas, nv, () => renderMarkers(modality))
-      overlay.addEventListener('pointerdown', event => startOptimizationWindow(event, views[modality][plane]))
+      installProjectionRefresh(canvas, () => renderMarkers(modality))
+      const card = canvas.closest<HTMLElement>('.view-card')!
+      installOptimizationWindowCapture(windowLayer, views[modality][plane])
       window.addEventListener('resize', () => renderMarkers(modality))
     }
   }
@@ -300,18 +327,26 @@ function setupReviewViews() {
     nv.onLocationChange = (loc: any) => {
       if (suppressReviewUpdate || !reviewImages || !loc?.mm) return
       const mm: Vec3 = [loc.mm[0], loc.mm[1], loc.mm[2]]
-      // Route overlay navigation through the same shared 3D coordinate state used
-      // by MRI and CT. Suppress the recursive review callback while updating the
-      // fixed modality, then explicitly synchronize all three overlay planes.
+      // Overlay coordinates are in the fixed-image world. Update the fixed image,
+      // map the same location back into the original moving image, and then redraw
+      // every overlay plane. This keeps MRI, CT, and overlay navigation coherent.
       suppressReviewUpdate = true
+      suppressLinkedUpdate = true
       gotoMm(reviewImages.fixedModality, mm)
+      if (fitResult) {
+        const movingMm = applyMat4(fitResult.inverse, mm)
+        gotoMm(reviewImages.movingModality, movingMm)
+      }
       for (const reviewView of Object.values(reviewViews)) {
         if (!reviewView.nv.volumes.length) continue
         reviewView.nv.scene.crosshairPos = reviewView.nv.mm2frac(mm)
         reviewView.nv.drawScene()
       }
       renderReviewMarkers()
-      requestAnimationFrame(() => { suppressReviewUpdate = false })
+      requestAnimationFrame(() => {
+        suppressLinkedUpdate = false
+        suppressReviewUpdate = false
+      })
     }
     installWheelZoomAndSlice(canvas, nv, () => {
       if (!reviewImages) return null
@@ -322,6 +357,7 @@ function setupReviewViews() {
       gotoMm(reviewImages.fixedModality, mm)
     })
     installHoverKeyboardPan(canvas, nv, renderReviewMarkers)
+    installProjectionRefresh(canvas, renderReviewMarkers)
     window.addEventListener('resize', renderReviewMarkers)
   }
 }
@@ -784,74 +820,120 @@ function windowCount(modality: Modality) { return Object.keys(optimizationWindow
 function updateWindowControls() {
   const mriCount = windowCount('mri'), ctCount = windowCount('ct')
   windowSummary.textContent = mriCount || ctCount
-    ? `Active constraints: MRI ${mriCount} plane${mriCount === 1 ? '' : 's'}, CT ${ctCount} plane${ctCount === 1 ? '' : 's'}. Rectangles from multiple planes combine into a 3D block.`
+    ? `Active constraints: MRI ${mriCount} plane${mriCount === 1 ? '' : 's'}, CT ${ctCount} plane${ctCount === 1 ? '' : 's'}. Each defined plane restricts only its two visible axes; any plane without a window is unrestricted.`
     : 'No optimization windows defined. The full geometric overlap will be used.'
   defineWindows.textContent = definingWindows ? 'Finish defining windows' : 'Define windows'
   for (const modality of ['mri','ct'] as Modality[]) for (const view of Object.values(views[modality])) {
-    view.overlay.classList.toggle('window-defining', definingWindows && (windowTarget.value === 'both' || windowTarget.value === modality))
+    const active = definingWindows && (windowTarget.value === 'both' || windowTarget.value === modality)
+    view.windowLayer.classList.toggle('active', active)
+    renderOptimizationWindow(view)
   }
 }
 
+function canvasToCss(view: View, pos: number[]): [number, number] {
+  const rect = view.canvas.getBoundingClientRect()
+  return [pos[0] * rect.width / Math.max(1, view.canvas.width), pos[1] * rect.height / Math.max(1, view.canvas.height)]
+}
+
 function renderOptimizationWindow(view: View) {
+  view.windowLayer.replaceChildren()
   const bounds = optimizationWindows[view.modality][view.plane]
-  if (!bounds) return
+  if (!bounds || !loaded[view.modality]) return
   const [a, b, depth] = planeAxes[view.plane]
   const center = currentMm[view.modality] ?? [0,0,0]
   const first = [...center] as Vec3, second = [...center] as Vec3
   first[a] = bounds.min[a]; first[b] = bounds.min[b]; first[depth] = center[depth]
   second[a] = bounds.max[a]; second[b] = bounds.max[b]; second[depth] = center[depth]
-  const p0 = view.nv.frac2canvasPos(view.nv.mm2frac(first)), p1 = view.nv.frac2canvasPos(view.nv.mm2frac(second))
-  if (!p0 || !p1) return
-  const rect = document.createElementNS('http://www.w3.org/2000/svg','rect')
-  rect.classList.add('optimization-window')
-  rect.setAttribute('x', String(Math.min(p0[0],p1[0]))); rect.setAttribute('y', String(Math.min(p0[1],p1[1])))
-  rect.setAttribute('width', String(Math.abs(p1[0]-p0[0]))); rect.setAttribute('height', String(Math.abs(p1[1]-p0[1])))
-  view.overlay.appendChild(rect)
+  const raw0 = view.nv.frac2canvasPos(view.nv.mm2frac(first)), raw1 = view.nv.frac2canvasPos(view.nv.mm2frac(second))
+  if (!raw0 || !raw1) return
+  const p0 = canvasToCss(view, raw0), p1 = canvasToCss(view, raw1)
+  const rect = document.createElement('div')
+  rect.className = 'optimization-window-box'
+  rect.style.left = `${Math.min(p0[0],p1[0])}px`
+  rect.style.top = `${Math.min(p0[1],p1[1])}px`
+  rect.style.width = `${Math.abs(p1[0]-p0[0])}px`
+  rect.style.height = `${Math.abs(p1[1]-p0[1])}px`
+  view.windowLayer.appendChild(rect)
 }
 
 function eventMm(view: View, event: PointerEvent): Vec3 | null {
   const rect = view.canvas.getBoundingClientRect()
-  const pos: [number,number] = [(event.clientX-rect.left)*(view.canvas.width/rect.width),(event.clientY-rect.top)*(view.canvas.height/rect.height)]
-  const frac = view.nv.canvasPos2frac(pos)
-  if (!frac) return null
-  const mm = view.nv.frac2mm(frac)
-  return [Number(mm[0]),Number(mm[1]),Number(mm[2])]
+  if (rect.width <= 0 || rect.height <= 0) return null
+  const pos: [number,number] = [
+    (event.clientX-rect.left)*(view.canvas.width/rect.width),
+    (event.clientY-rect.top)*(view.canvas.height/rect.height),
+  ]
+  const rawFrac = view.nv.canvasPos2frac(pos)
+  if (!rawFrac) return null
+  const frac = Array.from(rawFrac, Number)
+  if (frac.length < 3 || !frac.slice(0,3).every(Number.isFinite)) return null
+  const depthAxis = view.plane === 'sagittal' ? 0 : view.plane === 'coronal' ? 1 : 2
+  frac[depthAxis] = Number(view.nv.scene.crosshairPos[depthAxis])
+  const mm = Array.from(view.nv.frac2mm(frac), Number)
+  if (mm.length < 3 || !mm.slice(0,3).every(Number.isFinite)) return null
+  return [mm[0],mm[1],mm[2]]
+}
+
+function installOptimizationWindowCapture(layer: HTMLDivElement, view: View) {
+  layer.addEventListener('pointerdown', event => startOptimizationWindow(event, view))
 }
 
 function startOptimizationWindow(event: PointerEvent, view: View) {
   if (!definingWindows || !(windowTarget.value === 'both' || windowTarget.value === view.modality)) return
   const start = eventMm(view,event); if (!start) return
   event.preventDefault(); event.stopPropagation()
-  const preview = document.createElementNS('http://www.w3.org/2000/svg','rect')
-  preview.classList.add('optimization-window'); view.overlay.appendChild(preview)
+  view.windowLayer.setPointerCapture(event.pointerId)
+  const preview = document.createElement('div')
+  preview.className = 'optimization-window-box preview'
+  view.windowLayer.replaceChildren(preview)
   windowDrag = {view,startMm:start,preview}
+  const layerRect = view.windowLayer.getBoundingClientRect()
+  const sx = event.clientX-layerRect.left, sy = event.clientY-layerRect.top
   const move = (ev:PointerEvent) => {
-    if (!windowDrag) return
-    const now=eventMm(view,ev); if(!now)return
-    const p0=view.nv.frac2canvasPos(view.nv.mm2frac(start)), p1=view.nv.frac2canvasPos(view.nv.mm2frac(now)); if(!p0||!p1)return
-    preview.setAttribute('x',String(Math.min(p0[0],p1[0]))); preview.setAttribute('y',String(Math.min(p0[1],p1[1])))
-    preview.setAttribute('width',String(Math.abs(p1[0]-p0[0]))); preview.setAttribute('height',String(Math.abs(p1[1]-p0[1])))
+    if (!windowDrag || ev.pointerId !== event.pointerId) return
+    const ex=ev.clientX-layerRect.left, ey=ev.clientY-layerRect.top
+    preview.style.left=`${Math.min(sx,ex)}px`; preview.style.top=`${Math.min(sy,ey)}px`
+    preview.style.width=`${Math.abs(ex-sx)}px`; preview.style.height=`${Math.abs(ey-sy)}px`
   }
-  const up = (ev:PointerEvent) => {
-    window.removeEventListener('pointermove',move); window.removeEventListener('pointerup',up)
-    const end=eventMm(view,ev); preview.remove(); windowDrag=null; if(!end)return
+  const finish = (ev:PointerEvent) => {
+    if (ev.pointerId !== event.pointerId) return
+    view.windowLayer.removeEventListener('pointermove',move); view.windowLayer.removeEventListener('pointerup',finish); view.windowLayer.removeEventListener('pointercancel',cancel)
+    try { view.windowLayer.releasePointerCapture(event.pointerId) } catch {}
+    const end=eventMm(view,ev); windowDrag=null
+    if(!end){ renderOptimizationWindow(view); return }
     const [a,b,depth]=planeAxes[view.plane], min=[...start] as Vec3, max=[...start] as Vec3
     min[a]=Math.min(start[a],end[a]); max[a]=Math.max(start[a],end[a]); min[b]=Math.min(start[b],end[b]); max[b]=Math.max(start[b],end[b]); min[depth]=max[depth]=start[depth]
-    optimizationWindows[view.modality][view.plane]={min,max}; renderMarkers(view.modality); updateWindowControls()
+    const minSpan = Math.max(...(loaded[view.modality]?.raw.pixDims ?? [1])) * 1.5
+    if (Math.abs(max[a]-min[a]) < minSpan || Math.abs(max[b]-min[b]) < minSpan) {
+      setStatus('Optimization window was too small and was not saved.', true); renderOptimizationWindow(view); return
+    }
+    optimizationWindows[view.modality][view.plane]={min,max}
+    renderMarkers(view.modality); updateWindowControls(); setStatus(`${view.modality.toUpperCase()} ${view.plane} optimization window set.`)
   }
-  window.addEventListener('pointermove',move); window.addEventListener('pointerup',up,{once:true})
+  const cancel = (ev:PointerEvent) => { if(ev.pointerId!==event.pointerId)return; windowDrag=null; renderOptimizationWindow(view) }
+  view.windowLayer.addEventListener('pointermove',move); view.windowLayer.addEventListener('pointerup',finish); view.windowLayer.addEventListener('pointercancel',cancel)
 }
 
-function combinedWindow(modality: Modality): {min:Vec3;max:Vec3}|null {
-  const entries=Object.entries(optimizationWindows[modality]) as Array<[Plane,WindowBounds]>
-  if(!entries.length)return null
-  const mins:Vec3=[-Infinity,-Infinity,-Infinity], maxs:Vec3=[Infinity,Infinity,Infinity]
-  for(const [plane,bounds] of entries){const [a,b]=planeAxes[plane]; mins[a]=Math.max(mins[a],bounds.min[a]); maxs[a]=Math.min(maxs[a],bounds.max[a]); mins[b]=Math.max(mins[b],bounds.min[b]); maxs[b]=Math.min(maxs[b],bounds.max[b])}
-  for(let axis=0;axis<3;axis++){if(!Number.isFinite(mins[axis]))mins[axis]=-Infinity;if(!Number.isFinite(maxs[axis]))maxs[axis]=Infinity;if(mins[axis]>maxs[axis])throw new Error(`${modality.toUpperCase()} optimization windows do not intersect in 3D.`)}
-  return {min:mins,max:maxs}
+type WindowConstraint = Partial<Record<Plane, WindowBounds>>
+
+function optimizationConstraint(modality: Modality): WindowConstraint | null {
+  const windows = optimizationWindows[modality]
+  return Object.keys(windows).length ? windows : null
 }
 
-function withinWorldWindow(point:Vec3, window:{min:Vec3;max:Vec3}|null){return !window || point.every((v,i)=>v>=window.min[i]&&v<=window.max[i])}
+function withinOptimizationWindows(point: Vec3, constraint: WindowConstraint | null) {
+  if (!constraint) return true
+  // Each plane is optional. A plane without a rectangle imposes no restriction,
+  // so all voxels are considered for that view. Defined rectangles are tested
+  // only on their two visible axes and are never collapsed into a potentially
+  // misleading precomputed 3D intersection.
+  for (const [plane, bounds] of Object.entries(constraint) as Array<[Plane, WindowBounds]>) {
+    const [a, b] = planeAxes[plane]
+    if (point[a] < bounds.min[a] || point[a] > bounds.max[a] ||
+        point[b] < bounds.min[b] || point[b] > bounds.max[b]) return false
+  }
+  return true
+}
 
 function robustRange(values: Float32Array): [number, number] {
   const stride = Math.max(1, Math.floor(values.length/50000))
@@ -864,7 +946,7 @@ function robustRange(values: Float32Array): [number, number] {
   return [lo,hi]
 }
 
-type MetricContext = { fixed: Loaded; moving: Loaded; fixedModality: Modality; movingModality: Modality; movingWindow: {min:Vec3;max:Vec3}|null; points: Array<[Vec3,number]>; movingInv: number[][]; fixedRange:[number,number]; movingRange:[number,number]; overlapBox:{min:Vec3;max:Vec3}; candidateCount:number; overlapFractionFixed:number }
+type MetricContext = { fixed: Loaded; moving: Loaded; fixedModality: Modality; movingModality: Modality; movingWindow: WindowConstraint | null; points: Array<[Vec3,number]>; movingInv: number[][]; fixedRange:[number,number]; movingRange:[number,number]; overlapBox:{min:Vec3;max:Vec3}; candidateCount:number; overlapFractionFixed:number }
 function imageCornersWorld(image: Loaded): Vec3[] {
   const [nx,ny,nz]=image.raw.dims
   const corners:Vec3[]=[]
@@ -877,7 +959,7 @@ function makeMetricContext(maxSamples=25000): MetricContext {
   const movingModality: Modality = fitResult.direction === 'ct-mri' ? 'ct' : 'mri'
   const fixedModality: Modality = fitResult.direction === 'ct-mri' ? 'mri' : 'ct'
   const moving=loaded[movingModality]!,fixed=loaded[fixedModality]!
-  const fixedWindow=combinedWindow(fixedModality), movingWindow=combinedWindow(movingModality)
+  const fixedWindow=optimizationConstraint(fixedModality), movingWindow=optimizationConstraint(movingModality)
   const fv=frame(fixed.raw,0), fixedInv=invertAffine(fixed.raw.affine)
   const transformedCorners=imageCornersWorld(moving).map(p=>applyMat4(fitResult!.matrix,p)).map(p=>applyAffine(fixedInv,p))
   const mins:[number,number,number]=[0,1,2].map(a=>Math.max(0,Math.floor(Math.min(...transformedCorners.map(p=>p[a]))))) as Vec3
@@ -888,15 +970,23 @@ function makeMetricContext(maxSamples=25000): MetricContext {
   ]
   if(maxs.some((v,a)=>v<mins[a])) throw new Error('The images have no geometric overlap at the current transform.')
   const candidateCount=(maxs[0]-mins[0]+1)*(maxs[1]-mins[1]+1)*(maxs[2]-mins[2]+1)
-  const stride=Math.max(1,Math.ceil(Math.cbrt(candidateCount/maxSamples)))
-  const points:Array<[Vec3,number]>=[]
-  for(let k=mins[2];k<=maxs[2];k+=stride)for(let j=mins[1];j<=maxs[1];j+=stride)for(let i=mins[0];i<=maxs[0];i+=stride){
-    const idx=i+fixed.raw.dims[0]*(j+fixed.raw.dims[1]*k); const v=fv[idx]
-    const world=applyAffine(fixed.raw.affine,[i,j,k])
-    if(Number.isFinite(v)&&withinWorldWindow(world,fixedWindow)) points.push([world,v])
+  let stride=Math.max(1,Math.ceil(Math.cbrt(candidateCount/maxSamples)))
+  let points:Array<[Vec3,number]>=[]
+  const collect = (step:number) => {
+    const result:Array<[Vec3,number]>=[]
+    for(let k=mins[2];k<=maxs[2];k+=step)for(let j=mins[1];j<=maxs[1];j+=step)for(let i=mins[0];i<=maxs[0];i+=step){
+      const idx=i+fixed.raw.dims[0]*(j+fixed.raw.dims[1]*k); const v=fv[idx]
+      const world=applyAffine(fixed.raw.affine,[i,j,k])
+      if(Number.isFinite(v)&&withinOptimizationWindows(world,fixedWindow)) result.push([world,v])
+    }
+    return result
   }
+  points=collect(stride)
+  // Constraints can occupy a small part of a large overlap. Densify sampling
+  // before deciding that the region is unusable. Missing planes remain fully unrestricted.
+  while(points.length<1000 && stride>1){ stride=Math.max(1,Math.floor(stride/2)); points=collect(stride) }
   const fixedTotal=fixed.raw.dims[0]*fixed.raw.dims[1]*fixed.raw.dims[2]
-  if(points.length<500) throw new Error('Optimization windows leave too few fixed-image samples for refinement.')
+  if(points.length<64) throw new Error('The defined optimization windows contain too few valid fixed-image voxels. Clear or enlarge a defined window. Views without a window are unrestricted.')
   return {fixed,moving,fixedModality,movingModality,movingWindow,points,movingInv:invertAffine(moving.raw.affine),fixedRange:robustRange(fv),movingRange:robustRange(frame(moving.raw,0)),overlapBox:{min:mins,max:maxs},candidateCount,overlapFractionFixed:candidateCount/fixedTotal}
 }
 
@@ -906,7 +996,7 @@ function nmiScore(matrix: Mat4, ctx: MetricContext): number {
   const [flo,fhi]=ctx.fixedRange,[mlo,mhi]=ctx.movingRange
   let n=0
   for(const [world,fv] of ctx.points){
-    const sw=applyMat4(invT,world); if(!withinWorldWindow(sw,ctx.movingWindow))continue; const vox=applyAffine(ctx.movingInv,sw)
+    const sw=applyMat4(invT,world); if(!withinOptimizationWindows(sw,ctx.movingWindow))continue; const vox=applyAffine(ctx.movingInv,sw)
     if(vox[0]<0||vox[1]<0||vox[2]<0||vox[0]>=ctx.moving.raw.dims[0]-1||vox[1]>=ctx.moving.raw.dims[1]-1||vox[2]>=ctx.moving.raw.dims[2]-1)continue
     const mvv=sampleLinear(mv,ctx.moving.raw.dims,vox); if(!Number.isFinite(mvv))continue
     if(fv<=flo && mvv<=mlo) continue
@@ -914,7 +1004,7 @@ function nmiScore(matrix: Mat4, ctx: MetricContext): number {
     const mb=Math.max(0,Math.min(bins-1,Math.floor((mvv-mlo)/(mhi-mlo)*bins)))
     fh[fb]++;mh[mb]++;joint[fb*bins+mb]++;n++
   }
-  if(n<500)return -Infinity
+  if(n<Math.min(500, Math.max(64, Math.floor(ctx.points.length*0.25))))return -Infinity
   const entropy=(hist:Uint32Array)=>{let h=0;for(const c of hist)if(c){const p=c/n;h-=p*Math.log(p)}return h}
   const hj=entropy(joint); return hj>0?(entropy(fh)+entropy(mh))/hj:-Infinity
 }
