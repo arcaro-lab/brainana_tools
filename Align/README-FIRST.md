@@ -1,5 +1,5 @@
-# Brainana Align 0.16.0-parity.13
+# Brainana Align 0.16.22-lifecycle.7
 
-Open **Brainana Align.app**. The application is fully self-contained and uses the macOS default browser. No Node, npm, Python, Homebrew, NVM, Conda, or other installation is required.
+This release fixes the verified `rc: unbound variable` failure that stopped the remote saved-profile workflow before Terminal could open. It includes the complete self-contained macOS app, readable source, documentation, manifests, checksums, and both bundled macOS runtimes. No external Node, npm, Python, Homebrew, NVM, or Conda installation is required.
 
-This release replaces the per-panel optimization-window event patches with one shared window layer and one shared drawing implementation used by all six MRI and CT panels. A missing window in any plane is unrestricted for that plane. Only defined windows constrain automatic refinement.
+Start with the macOS app package. See `Documentation/VALIDATION-0.16.22-lifecycle.7.md` for validation details and the remaining real-Mac smoke test.

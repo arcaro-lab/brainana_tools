@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import json, os, pathlib, subprocess, tempfile, time, urllib.request
+import json, pathlib, secrets, subprocess, tempfile, time, urllib.request
 
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 SERVER=ROOT/'source'/'server.mjs'
@@ -8,12 +8,14 @@ def launch():
     td=tempfile.TemporaryDirectory(prefix='ba-handshake-')
     root=tempfile.TemporaryDirectory(prefix='ba-root-')
     port_file=pathlib.Path(td.name)/'port'
-    p=subprocess.Popen(['node',str(SERVER),'--port','0','--port-file',str(port_file),'--root',root.name],stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,text=True)
+    token=secrets.token_hex(32)
+    p=subprocess.Popen(['node',str(SERVER),'--port','0','--port-file',str(port_file),'--root',root.name,'--session-token',token],stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,text=True)
     deadline=time.time()+10
     while time.time()<deadline:
         if port_file.exists():
             port=int(port_file.read_text().strip())
-            with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/health',timeout=2) as r:
+            request=urllib.request.Request(f'http://127.0.0.1:{port}/api/health',headers={'X-Brainana-Session':token})
+            with urllib.request.urlopen(request,timeout=2) as r:
                 data=json.load(r)
             if not data.get('ok'): raise RuntimeError('health failed')
             return p,td,root,port

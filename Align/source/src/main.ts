@@ -1,19 +1,21 @@
 import './style.css'
 import { Niivue, NVImage, SLICE_TYPE } from '@niivue/niivue'
+import type { FitState, Landmark, Loaded, Modality, OptimizationWindows, Params6, Plane, ReviewView, View, WindowConstraint } from './appTypes'
 import { gzipSync } from 'fflate'
 import { applyAffine, frame, invertAffine, sampleLinear, type RawNifti } from './roiWarp'
 import { installRuntimeIntegration } from './runtimeIntegration'
 import { applyMat4, fitRigid, invertRigid, multiplyMat4, rigidDelta, type Mat4, type Vec3 } from './rigid'
-
-type Modality = 'mri' | 'ct'
-type Plane = 'sagittal' | 'coronal' | 'axial'
-type Landmark = { id: number; mri: Vec3 | null; ct: Vec3 | null; enabled: boolean; residual?: number }
-type Loaded = { name: string; raw: RawNifti; nvImage: NVImage; sourceFiles: string[] }
-type WindowBounds = { min: Vec3; max: Vec3 }
-type OptimizationWindows = Record<Modality, Partial<Record<Plane, WindowBounds>>>
-
-type View = { nv: Niivue; modality: Modality; plane: Plane; canvas: HTMLCanvasElement; overlay: SVGSVGElement; windowLayer: HTMLDivElement }
-type ReviewView = { nv: Niivue; plane: Plane; canvas: HTMLCanvasElement; overlay: SVGSVGElement }
+import { countOptimizationWindows, optimizationConstraint as getOptimizationConstraint, planeAxes, sanitizeOptimizationWindows, withinOptimizationWindows } from './optimizationWindows'
+import { installOptimizationWindowCapture } from './optimizationWindowInteraction'
+import { installHoverKeyboardPan, installProjectionRefresh, installWheelZoomAndSlice, isTypingTarget, panViewInScreenDirection, type HoveredView } from './viewInteraction'
+import { canvasPointToImageOnCurrentSlice, coordinateLabel, isFiniteVec3, planeDepthAxis } from './coordinateProjection'
+import { setOrthogonalCrosshairs, setReviewCrosshairs } from './crosshairController'
+import { renderModalityMarkers, renderReviewLandmarks } from './landmarkRenderer'
+import { VERSION as APP_VERSION } from './version'
+import { createSessionPayload, parseSessionPayload, sessionGeometryMismatches } from './sessionPersistence'
+import { createRegistrationArtifacts, saveArtifact, saveArtifacts } from './exportArtifacts'
+import { detectBrowserCapabilities } from './browserCapabilities'
+import { installBrowserCompatibilityBanner } from './browserCompatibility'
 
 const planeTypes: Record<Plane, SLICE_TYPE> = {
   sagittal: SLICE_TYPE.SAGITTAL,
@@ -24,7 +26,7 @@ const planeTypes: Record<Plane, SLICE_TYPE> = {
 const app = document.querySelector<HTMLDivElement>('#app')!
 app.innerHTML = `
 <header class="topbar">
-  <div class="brand">Brainana Align <span>v0.16.0-parity.13</span></div>
+  <div class="brand">Brainana Align <span>v0.16.22-lifecycle.7</span></div>
   <div class="workflow-group image-loads">
     <label class="load compact-load" title="Load an MRI volume"><input id="mri-file" type="file" multiple accept=".nii,.nii.gz,.hdr,.img,.img.gz,.head,.brik,.brik.gz,.mgh,.mgz,.nrrd,.nhdr,.mif,.mha,.mhd,.raw,.v,.v16,.vmr,.npy,.npz,.fib,.src,.gz,application/gzip,application/x-gzip,application/octet-stream"><strong id="mri-name">Load MRI</strong></label>
     <label class="load compact-load" title="Load a CT volume"><input id="ct-file" type="file" multiple accept=".nii,.nii.gz,.hdr,.img,.img.gz,.head,.brik,.brik.gz,.mgh,.mgz,.nrrd,.nhdr,.mif,.mha,.mhd,.raw,.v,.v16,.vmr,.npy,.npz,.fib,.src,.gz,application/gzip,application/x-gzip,application/octet-stream"><strong id="ct-name">Load CT</strong></label>
@@ -164,8 +166,6 @@ const currentMm: Record<Modality, Vec3 | null> = { mri: null, ct: null }
 let landmarks: Landmark[] = []
 let selectedId: number | null = null
 let nextId = 1
-type Params6 = [number, number, number, number, number, number]
-type FitState = { direction: string; landmarkMatrix: Mat4; baseMatrix: Mat4; matrix: Mat4; inverse: Mat4; rms: number; manual: Params6; proposal: { matrix: Mat4; scoreBefore: number; scoreAfter: number; params: Params6 } | null; landmarkSnapshot: Landmark[]; landmarksChanged: boolean; fittedAt: string }
 let fitResult: FitState | null = null
 let reviewBuildTimer: number | null = null
 let history: Landmark[][] = []
@@ -175,7 +175,6 @@ const suppressCrosshairSync: Record<Modality, boolean> = { mri: false, ct: false
 let reviewImages: { fixed: NVImage; moving: NVImage; fixedModality: Modality; movingModality: Modality } | null = null
 let optimizationWindows: OptimizationWindows = { mri: {}, ct: {} }
 let definingWindows = false
-let windowDrag: { view: View; startMm: Vec3; preview: HTMLDivElement } | null = null
 
 function setStatus(text: string, error = false) { statusEl.textContent = text; statusEl.classList.toggle('error', error) }
 
@@ -191,66 +190,7 @@ function setImagePlaceholder(modality: Modality, mode: 'empty' | 'loading' | 'hi
 }
 function snapshot() { history.push(structuredClone(landmarks)); if (history.length > 40) history.shift() }
 
-const wheelSliceAccumulator = new WeakMap<HTMLCanvasElement, number>()
-type HoveredView = { canvas: HTMLCanvasElement; nv: Niivue; redrawMarkers: () => void }
 let hoveredView: HoveredView | null = null
-const projectionRefreshFrames = new WeakMap<HTMLCanvasElement, number>()
-
-function scheduleProjectionRefresh(canvas: HTMLCanvasElement, redraw: () => void) {
-  const previous = projectionRefreshFrames.get(canvas)
-  if (previous !== undefined) cancelAnimationFrame(previous)
-  let remaining = 3
-  const refresh = () => {
-    redraw()
-    remaining -= 1
-    if (remaining > 0) projectionRefreshFrames.set(canvas, requestAnimationFrame(refresh))
-    else projectionRefreshFrames.delete(canvas)
-  }
-  projectionRefreshFrames.set(canvas, requestAnimationFrame(refresh))
-}
-
-function installProjectionRefresh(canvas: HTMLCanvasElement, redraw: () => void) {
-  // NiiVue updates its camera after processing wheel and drag events. Reproject SVG
-  // annotations for a few animation frames so markers and windows track zoom and pan.
-  canvas.addEventListener('wheel', () => scheduleProjectionRefresh(canvas, redraw), { passive: true })
-  canvas.addEventListener('pointermove', event => {
-    if (event.buttons) scheduleProjectionRefresh(canvas, redraw)
-  }, { passive: true })
-  canvas.addEventListener('pointerup', () => scheduleProjectionRefresh(canvas, redraw), { passive: true })
-}
-
-function installHoverKeyboardPan(canvas: HTMLCanvasElement, nv: Niivue, redrawMarkers: () => void) {
-  const target: HoveredView = { canvas, nv, redrawMarkers }
-  canvas.addEventListener('mouseenter', () => { hoveredView = target })
-  canvas.addEventListener('mouseleave', () => { if (hoveredView?.canvas === canvas) hoveredView = null })
-}
-
-function panViewInScreenDirection(target: HoveredView, dxCss: number, dyCss: number) {
-  const { canvas, nv } = target
-  const rect = canvas.getBoundingClientRect()
-  if (rect.width <= 0 || rect.height <= 0) return
-  const scaleX = canvas.width / rect.width
-  const scaleY = canvas.height / rect.height
-  const center: [number, number] = [canvas.width * 0.5, canvas.height * 0.5]
-  const shifted: [number, number] = [center[0] + dxCss * scaleX, center[1] + dyCss * scaleY]
-  const startFrac = nv.canvasPos2frac(center)
-  const endFrac = nv.canvasPos2frac(shifted)
-  if (!startFrac || !endFrac) return
-  const startMm = nv.frac2mm(startFrac)
-  const endMm = nv.frac2mm(endFrac)
-  if (![...startMm, ...endMm].every(Number.isFinite)) return
-  const zoom = Number(nv.scene.pan2Dxyzmm[3]) || 1
-  nv.scene.pan2Dxyzmm[0] += zoom * (Number(endMm[0]) - Number(startMm[0]))
-  nv.scene.pan2Dxyzmm[1] += zoom * (Number(endMm[1]) - Number(startMm[1]))
-  nv.scene.pan2Dxyzmm[2] += zoom * (Number(endMm[2]) - Number(startMm[2]))
-  nv.drawScene()
-  target.redrawMarkers()
-}
-
-function isTypingTarget(target: EventTarget | null) {
-  const el = target as HTMLElement | null
-  return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)
-}
 
 document.addEventListener('keydown', event => {
   if (!hoveredView || isTypingTarget(event.target)) return
@@ -263,41 +203,6 @@ document.addEventListener('keydown', event => {
   const step = event.shiftKey ? 36 : 12
   panViewInScreenDirection(hoveredView, direction[0] * step, direction[1] * step)
 })
-
-function installWheelZoomAndSlice(canvas: HTMLCanvasElement, nv: Niivue, getSliceDims: () => [number, number, number] | null, plane: Plane, onSliceMm?: (mm: Vec3) => void) {
-  canvas.title = 'Wheel or two-finger scroll: zoom. Shift + wheel: change slice. Hover and use arrow keys, or drag empty space, to pan the field of view.'
-  canvas.addEventListener('wheel', (event) => {
-    // NiiVue handles an unmodified wheel gesture as zoom because these views use pan mode.
-    // Shift reserves the same gesture for discrete slice navigation.
-    if (!event.shiftKey) return
-    event.preventDefault()
-    event.stopImmediatePropagation()
-    const previous = wheelSliceAccumulator.get(canvas) ?? 0
-    const accumulated = previous + event.deltaY
-    const threshold = 24
-    if (Math.abs(accumulated) < threshold) {
-      wheelSliceAccumulator.set(canvas, accumulated)
-      return
-    }
-    const steps = Math.max(-4, Math.min(4, Math.trunc(accumulated / threshold)))
-    wheelSliceAccumulator.set(canvas, accumulated - steps * threshold)
-    const dims = getSliceDims()
-    if (!dims) return
-    const axis = plane === 'sagittal' ? 0 : plane === 'coronal' ? 1 : 2
-    const frac = [...nv.scene.crosshairPos] as number[]
-    const denominator = Math.max(1, dims[axis] - 1)
-    // Positive wheel motion advances in the same direction used by the prior slice scroller.
-    frac[axis] = Math.max(0, Math.min(1, frac[axis] + steps / denominator))
-    const mmRaw = nv.frac2mm(frac)
-    const mm: Vec3 = [Number(mmRaw[0]), Number(mmRaw[1]), Number(mmRaw[2])]
-    if (onSliceMm) onSliceMm(mm)
-    else {
-      nv.scene.crosshairPos = frac as any
-      nv.drawScene()
-      nv.sync()
-    }
-  }, { capture: true, passive: false })
-}
 
 function setupViews() {
   for (const modality of ['mri','ct'] as Modality[]) {
@@ -314,10 +219,10 @@ function setupViews() {
       nv.setCrosshairColor(modality === 'mri' ? [0.25,0.85,1,1] : [1,0.7,0.15,1])
       nv.onLocationChange = (loc: any) => handleLocation(modality, loc?.mm, plane)
       installWheelZoomAndSlice(canvas, nv, () => loaded[modality]?.raw.dims ?? null, plane, mm => gotoMm(modality, mm))
-      installHoverKeyboardPan(canvas, nv, () => renderMarkers(modality))
+      installHoverKeyboardPan(canvas, nv, () => renderMarkers(modality), view => { hoveredView = view })
       installProjectionRefresh(canvas, () => renderMarkers(modality))
       const card = canvas.closest<HTMLElement>('.view-card')!
-      installOptimizationWindowCapture(windowLayer, views[modality][plane])
+      installWindowCapture(views[modality][plane])
       window.addEventListener('resize', () => renderMarkers(modality))
     }
   }
@@ -367,7 +272,7 @@ function setupReviewViews() {
       if (!reviewImages) return
       gotoMm(reviewImages.fixedModality, mm)
     })
-    installHoverKeyboardPan(canvas, nv, renderReviewMarkers)
+    installHoverKeyboardPan(canvas, nv, renderReviewMarkers, view => { hoveredView = view })
     installProjectionRefresh(canvas, renderReviewMarkers)
     window.addEventListener('resize', renderReviewMarkers)
   }
@@ -449,32 +354,27 @@ async function loadFiles(modality: Modality, files: File[]) {
 }
 
 function handleLocation(modality: Modality, mm: number[] | undefined, sourcePlane?: Plane) {
-  if (!mm || mm.length < 3 || !mm.slice(0,3).every(Number.isFinite)) return
+  if (!isFiniteVec3(mm)) return
   const nextMm: Vec3 = [mm[0], mm[1], mm[2]]
   currentMm[modality] = nextMm
 
-  // Keep the three orthogonal crosshairs synchronized without sharing pan or zoom.
-  // NiiVue's broad broadcast synchronization also propagated the 2D camera state,
-  // so crosshair position is copied explicitly instead.
   if (!suppressCrosshairSync[modality]) {
     suppressCrosshairSync[modality] = true
-    for (const view of Object.values(views[modality])) {
-      if (sourcePlane && view.plane === sourcePlane) continue
-      view.nv.scene.crosshairPos = view.nv.mm2frac(nextMm)
-      view.nv.drawScene()
-    }
+    setOrthogonalCrosshairs(modality, views[modality], nextMm, sourcePlane)
     requestAnimationFrame(() => { suppressCrosshairSync[modality] = false })
+  } else {
+    document.querySelector(`#${modality}-coords`)!.textContent = coordinateLabel(nextMm)
   }
 
-  document.querySelector(`#${modality}-coords`)!.textContent = `x ${mm[0].toFixed(1)}  y ${mm[1].toFixed(1)}  z ${mm[2].toFixed(1)} mm`
   renderMarkers(modality)
-  if (reviewImages && modality === reviewImages.fixedModality && !suppressReviewUpdate) gotoReviewMm(currentMm[modality]!)
+  if (reviewImages && modality === reviewImages.fixedModality && !suppressReviewUpdate) gotoReviewMm(nextMm)
   if (fitResult && linkAfter.checked && !suppressLinkedUpdate) {
     const other: Modality = modality === 'mri' ? 'ct' : 'mri'
     if (!loaded[other]) return
-    let mapped: Vec3 | null = null
-    if (fitResult.direction === 'ct-mri') mapped = modality === 'ct' ? applyMat4(fitResult.matrix, currentMm[modality]!) : applyMat4(fitResult.inverse, currentMm[modality]!)
-    else mapped = modality === 'mri' ? applyMat4(fitResult.matrix, currentMm[modality]!) : applyMat4(fitResult.inverse, currentMm[modality]!)
+    const mapped = applyMat4(
+      (fitResult.direction === 'ct-mri' ? modality === 'ct' : modality === 'mri') ? fitResult.matrix : fitResult.inverse,
+      nextMm,
+    )
     suppressLinkedUpdate = true
     gotoMm(other, mapped)
     requestAnimationFrame(() => { suppressLinkedUpdate = false })
@@ -483,81 +383,29 @@ function handleLocation(modality: Modality, mm: number[] | undefined, sourcePlan
 
 function gotoMm(modality: Modality, mm: Vec3) {
   currentMm[modality] = mm
-  for (const view of Object.values(views[modality])) {
-    const frac = view.nv.mm2frac(mm)
-    view.nv.scene.crosshairPos = frac
-    view.nv.drawScene()
-  }
-  document.querySelector(`#${modality}-coords`)!.textContent = `x ${mm[0].toFixed(1)}  y ${mm[1].toFixed(1)}  z ${mm[2].toFixed(1)} mm`
+  setOrthogonalCrosshairs(modality, views[modality], mm)
   renderMarkers(modality)
   if (reviewImages && modality === reviewImages.fixedModality && !suppressReviewUpdate) gotoReviewMm(mm)
 }
 
 function gotoReviewMm(mm: Vec3) {
   suppressReviewUpdate = true
-  for (const view of Object.values(reviewViews)) {
-    if (!view.nv.volumes.length) continue
-    view.nv.scene.crosshairPos = view.nv.mm2frac(mm)
-    view.nv.drawScene()
-  }
+  setReviewCrosshairs(reviewViews, mm)
   renderReviewMarkers()
   requestAnimationFrame(() => { suppressReviewUpdate = false })
 }
 
-function markerDepthDistance(modality: Modality, plane: Plane, point: Vec3): number {
-  const here = currentMm[modality]
-  if (!here) return Infinity
-  const axis = plane === 'sagittal' ? 0 : plane === 'coronal' ? 1 : 2
-  return Math.abs(point[axis] - here[axis])
-}
-
 function renderMarkers(modality: Modality) {
-  for (const view of Object.values(views[modality])) {
-    const { overlay, nv, plane, canvas } = view
-    overlay.setAttribute('viewBox', `0 0 ${canvas.width || 1} ${canvas.height || 1}`)
-    overlay.innerHTML = ''
-    if (!loaded[modality]) continue
-    const voxelTolerance = Math.max(...loaded[modality]!.raw.pixDims) * 1.25
-    for (const lm of landmarks) {
-      const point = lm[modality]
-      if (!point) continue
-      const dist = markerDepthDistance(modality, plane, point)
-      if (dist > voxelTolerance * 2.5) continue
-      const frac = nv.mm2frac(point)
-      const pos = nv.frac2canvasPos(frac)
-      if (!pos) continue
-      const [x, y] = pos
-      const g = document.createElementNS('http://www.w3.org/2000/svg','g')
-      g.classList.add('marker')
-      if (lm.id === selectedId) g.classList.add('selected')
-      if (!lm.enabled) g.classList.add('disabled')
-      if (dist > voxelTolerance) g.classList.add('nearby')
-      g.setAttribute('transform', `translate(${x},${y})`)
-      g.dataset.id = String(lm.id)
-      g.innerHTML = `<circle class="hit" r="15"></circle><circle class="ring" r="7"></circle><line x1="-11" y1="0" x2="11" y2="0"></line><line x1="0" y1="-11" x2="0" y2="11"></line><text x="10" y="-9">${lm.id}</text>`
-      g.addEventListener('pointerdown', ev => startMarkerDrag(ev, view, lm.id))
-      overlay.appendChild(g)
-    }
-    renderOptimizationWindow(view)
-    if (fitResult?.landmarksChanged) {
-      for (const lm of fitResult.landmarkSnapshot) {
-        const point = lm[modality]
-        if (!point) continue
-        const current = landmarks.find(v => v.id === lm.id)?.[modality]
-        if (current && Math.hypot(current[0]-point[0], current[1]-point[1], current[2]-point[2]) < 1e-4) continue
-        const dist = markerDepthDistance(modality, plane, point)
-        if (dist > voxelTolerance * 2.5) continue
-        const pos = nv.frac2canvasPos(nv.mm2frac(point))
-        if (!pos) continue
-        const g = document.createElementNS('http://www.w3.org/2000/svg','g')
-        g.classList.add('marker','alignment-snapshot')
-        if (dist > voxelTolerance) g.classList.add('nearby')
-        g.setAttribute('transform', `translate(${pos[0]},${pos[1]})`)
-        g.innerHTML = `<circle class="ring" r="9"></circle><text x="12" y="12">${lm.id}</text>`
-        overlay.appendChild(g)
-      }
-    }
-  }
+  renderModalityMarkers({
+    views: views[modality],
+    loaded: loaded[modality],
+    currentMm: currentMm[modality],
+    landmarks,
+    selectedId,
+    fitResult,
+    renderOptimizationWindow,
+    onMarkerPointerDown: startMarkerDrag,
+  })
 }
 
 function reviewPointFor(lm: Landmark, modality: Modality): Vec3 | null {
@@ -569,38 +417,15 @@ function reviewPointFor(lm: Landmark, modality: Modality): Vec3 | null {
 }
 
 function renderReviewMarkers() {
-  for (const view of Object.values(reviewViews)) {
-    const { overlay, nv, plane, canvas } = view
-    overlay.setAttribute('viewBox', `0 0 ${canvas.width || 1} ${canvas.height || 1}`)
-    overlay.innerHTML = ''
-    if (!reviewImages || !fitResult || !loaded[reviewImages.fixedModality]) continue
-    const here = currentMm[reviewImages.fixedModality]
-    if (!here) continue
-    const tolerance = Math.max(...loaded[reviewImages.fixedModality]!.raw.pixDims) * 1.25
-    const axis = plane === 'sagittal' ? 0 : plane === 'coronal' ? 1 : 2
-    for (const lm of fitResult.landmarkSnapshot) {
-      if (!lm.enabled) continue
-      const points: Array<{ point: Vec3 | null; kind: 'fixed' | 'moving' }> = [
-        { point: reviewPointFor(lm, reviewImages.fixedModality), kind: 'fixed' },
-        { point: reviewPointFor(lm, reviewImages.movingModality), kind: 'moving' },
-      ]
-      for (const item of points) {
-        if (!item.point) continue
-        const dist = Math.abs(item.point[axis] - here[axis])
-        if (dist > tolerance * 2.5) continue
-        const pos = nv.frac2canvasPos(nv.mm2frac(item.point))
-        if (!pos) continue
-        const g = document.createElementNS('http://www.w3.org/2000/svg','g')
-        g.classList.add('review-marker', item.kind)
-        if (dist > tolerance) g.classList.add('nearby')
-        g.setAttribute('transform', `translate(${pos[0]},${pos[1]})`)
-        g.innerHTML = item.kind === 'fixed'
-          ? `<circle r="8"></circle><text x="11" y="-9">${lm.id}</text>`
-          : `<path d="M 0 -9 L 9 0 L 0 9 L -9 0 Z"></path>`
-        overlay.appendChild(g)
-      }
-    }
-  }
+  renderReviewLandmarks({
+    views: reviewViews,
+    fixedLoaded: reviewImages ? loaded[reviewImages.fixedModality] : null,
+    fixedCurrentMm: reviewImages ? currentMm[reviewImages.fixedModality] : null,
+    fitResult,
+    pointFor: reviewPointFor,
+    fixedModality: reviewImages?.fixedModality ?? null,
+    movingModality: reviewImages?.movingModality ?? null,
+  })
 }
 
 function startMarkerDrag(ev: PointerEvent, view: View, id: number) {
@@ -610,14 +435,11 @@ function startMarkerDrag(ev: PointerEvent, view: View, id: number) {
     const rect = view.canvas.getBoundingClientRect()
     const x = (e.clientX - rect.left) * (view.canvas.width / rect.width)
     const y = (e.clientY - rect.top) * (view.canvas.height / rect.height)
-    const frac = view.nv.canvasPos2frac([x,y])
-    const fracArray = Array.from(frac)
-    if (!fracArray.every(Number.isFinite)) return
-    const mm4 = Array.from(view.nv.frac2mm(frac))
-    const mm: Vec3 = [mm4[0], mm4[1], mm4[2]]
+    const mm = canvasPointToImageOnCurrentSlice(view, x, y)
+    if (!mm) return
     const lm = landmarks.find(v => v.id === id); if (!lm) return
     const old = lm[view.modality]; if (!old) return
-    const axis = view.plane === 'sagittal' ? 0 : view.plane === 'coronal' ? 1 : 2
+    const axis = planeDepthAxis(view.plane)
     mm[axis] = old[axis]
     lm[view.modality] = mm
     markLandmarksChanged(); renderAll()
@@ -831,13 +653,8 @@ function scheduleReviewBuild() {
 }
 
 
-const planeAxes: Record<Plane, [number, number, number]> = {
-  sagittal: [1, 2, 0], coronal: [0, 2, 1], axial: [0, 1, 2],
-}
-
-function windowCount(modality: Modality) { return Object.keys(optimizationWindows[modality]).length }
 function updateWindowControls() {
-  const mriCount = windowCount('mri'), ctCount = windowCount('ct')
+  const mriCount = countOptimizationWindows(optimizationWindows, 'mri'), ctCount = countOptimizationWindows(optimizationWindows, 'ct')
   windowSummary.textContent = mriCount || ctCount
     ? `Active constraints: MRI ${mriCount} plane${mriCount === 1 ? '' : 's'}, CT ${ctCount} plane${ctCount === 1 ? '' : 's'}. Each defined plane restricts only its two visible axes; any plane without a window is unrestricted.`
     : 'No optimization windows defined. The full geometric overlap will be used.'
@@ -893,65 +710,34 @@ function eventMm(view: View, event: PointerEvent): Vec3 | null {
   return [mm[0],mm[1],mm[2]]
 }
 
-function installOptimizationWindowCapture(layer: HTMLDivElement, view: View) {
-  layer.addEventListener('pointerdown', event => startOptimizationWindow(event, view))
+function installWindowCapture(view: View) {
+  installOptimizationWindowCapture({
+    view,
+    isEnabled: () => Boolean(
+      loaded[view.modality] &&
+      definingWindows &&
+      (windowTarget.value === 'both' || windowTarget.value === view.modality)
+    ),
+    getPixDims: () => loaded[view.modality]?.raw.pixDims ?? null,
+    eventToMm: event => eventMm(view, event),
+    onCommit: bounds => {
+      optimizationWindows[view.modality][view.plane] = bounds
+      optimizationWindows = sanitizeOptimizationWindows(optimizationWindows)
+      updateWindowControls()
+      renderMarkers(view.modality)
+      setStatus(`${view.modality.toUpperCase()} ${view.plane} optimization window set.`)
+    },
+    onReject: () => {
+      delete optimizationWindows[view.modality][view.plane]
+      optimizationWindows = sanitizeOptimizationWindows(optimizationWindows)
+      setStatus('Optimization window was too small and was not saved.', true)
+      updateWindowControls()
+    },
+  })
 }
-
-function startOptimizationWindow(event: PointerEvent, view: View) {
-  if (!definingWindows || !(windowTarget.value === 'both' || windowTarget.value === view.modality)) return
-  const start = eventMm(view,event); if (!start) return
-  event.preventDefault(); event.stopPropagation()
-  view.windowLayer.setPointerCapture(event.pointerId)
-  const preview = document.createElement('div')
-  preview.className = 'optimization-window-box preview'
-  view.windowLayer.replaceChildren(preview)
-  windowDrag = {view,startMm:start,preview}
-  const layerRect = view.windowLayer.getBoundingClientRect()
-  const sx = event.clientX-layerRect.left, sy = event.clientY-layerRect.top
-  const move = (ev:PointerEvent) => {
-    if (!windowDrag || ev.pointerId !== event.pointerId) return
-    const ex=ev.clientX-layerRect.left, ey=ev.clientY-layerRect.top
-    preview.style.left=`${Math.min(sx,ex)}px`; preview.style.top=`${Math.min(sy,ey)}px`
-    preview.style.width=`${Math.abs(ex-sx)}px`; preview.style.height=`${Math.abs(ey-sy)}px`
-  }
-  const finish = (ev:PointerEvent) => {
-    if (ev.pointerId !== event.pointerId) return
-    view.windowLayer.removeEventListener('pointermove',move); view.windowLayer.removeEventListener('pointerup',finish); view.windowLayer.removeEventListener('pointercancel',cancel)
-    try { view.windowLayer.releasePointerCapture(event.pointerId) } catch {}
-    const end=eventMm(view,ev); windowDrag=null
-    if(!end){ renderOptimizationWindow(view); return }
-    const [a,b,depth]=planeAxes[view.plane], min=[...start] as Vec3, max=[...start] as Vec3
-    min[a]=Math.min(start[a],end[a]); max[a]=Math.max(start[a],end[a]); min[b]=Math.min(start[b],end[b]); max[b]=Math.max(start[b],end[b]); min[depth]=max[depth]=start[depth]
-    const minSpan = Math.max(...(loaded[view.modality]?.raw.pixDims ?? [1])) * 1.5
-    if (Math.abs(max[a]-min[a]) < minSpan || Math.abs(max[b]-min[b]) < minSpan) {
-      setStatus('Optimization window was too small and was not saved.', true); renderOptimizationWindow(view); return
-    }
-    optimizationWindows[view.modality][view.plane]={min,max}
-    renderMarkers(view.modality); updateWindowControls(); setStatus(`${view.modality.toUpperCase()} ${view.plane} optimization window set.`)
-  }
-  const cancel = (ev:PointerEvent) => { if(ev.pointerId!==event.pointerId)return; windowDrag=null; renderOptimizationWindow(view) }
-  view.windowLayer.addEventListener('pointermove',move); view.windowLayer.addEventListener('pointerup',finish); view.windowLayer.addEventListener('pointercancel',cancel)
-}
-
-type WindowConstraint = Partial<Record<Plane, WindowBounds>>
 
 function optimizationConstraint(modality: Modality): WindowConstraint | null {
-  const windows = optimizationWindows[modality]
-  return Object.keys(windows).length ? windows : null
-}
-
-function withinOptimizationWindows(point: Vec3, constraint: WindowConstraint | null) {
-  if (!constraint) return true
-  // Each plane is optional. A plane without a rectangle imposes no restriction,
-  // so all voxels are considered for that view. Defined rectangles are tested
-  // only on their two visible axes and are never collapsed into a potentially
-  // misleading precomputed 3D intersection.
-  for (const [plane, bounds] of Object.entries(constraint) as Array<[Plane, WindowBounds]>) {
-    const [a, b] = planeAxes[plane]
-    if (point[a] < bounds.min[a] || point[a] > bounds.max[a] ||
-        point[b] < bounds.min[b] || point[b] > bounds.max[b]) return false
-  }
-  return true
+  return getOptimizationConstraint(optimizationWindows, modality)
 }
 
 function robustRange(values: Float32Array): [number, number] {
@@ -1005,7 +791,13 @@ function makeMetricContext(maxSamples=25000): MetricContext {
   // before deciding that the region is unusable. Missing planes remain fully unrestricted.
   while(points.length<1000 && stride>1){ stride=Math.max(1,Math.floor(stride/2)); points=collect(stride) }
   const fixedTotal=fixed.raw.dims[0]*fixed.raw.dims[1]*fixed.raw.dims[2]
-  if(points.length<64) throw new Error('The defined optimization windows contain too few valid fixed-image voxels. Clear or enlarge a defined window. Views without a window are unrestricted.')
+  if (points.length < 64) {
+    if (fixedWindow) {
+      const planes = Object.keys(fixedWindow).join(', ')
+      throw new Error(`The defined ${fixedModality.toUpperCase()} optimization window${Object.keys(fixedWindow).length === 1 ? '' : 's'} (${planes}) contain too few valid fixed-image voxels. Clear or enlarge a defined window. Any view without a window remains unrestricted.`)
+    }
+    throw new Error('The current transform leaves too few valid overlapping fixed-image voxels for automatic refinement. Adjust the alignment or verify the image geometry.')
+  }
   return {fixed,moving,fixedModality,movingModality,movingWindow,points,movingInv:invertAffine(moving.raw.affine),fixedRange:robustRange(fv),movingRange:robustRange(frame(moving.raw,0)),overlapBox:{min:mins,max:maxs},candidateCount,overlapFractionFixed:candidateCount/fixedTotal}
 }
 
@@ -1080,62 +872,87 @@ function rejectRefinement(){
   fitResult.proposal=null;updateCurrentTransform(true);refineSummary.textContent='Refinement rejected. The previous accepted transform has been restored.';setStatus('Automatic refinement rejected.')
 }
 
-type SessionPayload = { optimizationWindows?: OptimizationWindows;
-  application:string; version:string; saved_at:string; images:{mri:ImageSignature|null;ct:ImageSignature|null}; landmarks:Landmark[]; selectedId:number|null; nextId:number; direction:string; fit:FitState|null
+function currentSession() {
+  return createSessionPayload({
+    appVersion: APP_VERSION,
+    loaded,
+    landmarks,
+    selectedId,
+    nextId,
+    direction: directionSelect.value,
+    fit: fitResult,
+    optimizationWindows,
+  })
 }
-type ImageSignature = {name:string;sourceFiles:string[];dims:[number,number,number];pixDims:[number,number,number];affine:number[][]}
-function imageSignature(modality:Modality):ImageSignature|null {
-  const item=loaded[modality]; if(!item)return null
-  return {name:item.name,sourceFiles:item.sourceFiles,dims:item.raw.dims,pixDims:item.raw.pixDims,affine:item.raw.affine}
-}
-function geometryDifference(a:ImageSignature,b:ImageSignature):string[] {
-  const issues:string[]=[]
-  if(a.dims.some((v,i)=>v!==b.dims[i]))issues.push(`dimensions ${a.dims.join('×')} vs ${b.dims.join('×')}`)
-  if(a.pixDims.some((v,i)=>Math.abs(v-b.pixDims[i])>1e-3))issues.push('voxel sizes differ')
-  let maxAffine=0;for(let r=0;r<4;r++)for(let c=0;c<4;c++)maxAffine=Math.max(maxAffine,Math.abs(a.affine[r][c]-b.affine[r][c]))
-  if(maxAffine>1e-3)issues.push(`affines differ (max |Δ| ${maxAffine.toFixed(4)})`)
-  return issues
-}
-function currentSession():SessionPayload {
-  return {application:'Brainana Align',version:'0.7.0',saved_at:new Date().toISOString(),images:{mri:imageSignature('mri'),ct:imageSignature('ct')},landmarks:structuredClone(landmarks),selectedId,nextId,direction:directionSelect.value,fit:fitResult?structuredClone(fitResult):null,optimizationWindows:structuredClone(optimizationWindows)}
-}
-function saveSessionFile(){download(new Blob([JSON.stringify(currentSession(),null,2)],{type:'application/json'}),'brainana-align_session.json');setStatus('Session saved.')}
-async function loadSessionFile(file:File){
-  const payload=JSON.parse(await file.text()) as SessionPayload
-  if(payload.application!=='Brainana Align'||!Array.isArray(payload.landmarks))throw new Error('This is not a valid Brainana Align session file.')
-  const mismatch:string[]=[]
-  for(const modality of ['mri','ct'] as Modality[]){const saved=payload.images?.[modality],now=imageSignature(modality);if(saved&&now)mismatch.push(...geometryDifference(saved,now).map(v=>`${modality.toUpperCase()}: ${v}`))}
-  let restoreFit=true
-  if(mismatch.length){restoreFit=false;const ok=window.confirm(`Image geometry does not match the saved session:
 
-${mismatch.join('\n')}
-
-Load landmarks only?`);if(!ok)return}
-  snapshot();landmarks=structuredClone(payload.landmarks);selectedId=payload.selectedId??null;nextId=Math.max(payload.nextId??1,...landmarks.map(l=>l.id+1),1);directionSelect.value=payload.direction||'ct-mri';optimizationWindows=payload.optimizationWindows?structuredClone(payload.optimizationWindows):{mri:{},ct:{}};updateWindowControls()
-  if(restoreFit&&payload.fit&&loaded.mri&&loaded.ct){fitResult=structuredClone(payload.fit);if(!fitResult.landmarkSnapshot)fitResult.landmarkSnapshot=structuredClone(payload.landmarks);if(fitResult.landmarksChanged===undefined)fitResult.landmarksChanged=false;if(!fitResult.fittedAt)fitResult.fittedAt=payload.saved_at;saveAligned.disabled=false;saveTransform.disabled=false;resetManual.disabled=false;resetLandmark.disabled=false;refineButton.disabled=false;restoreAlignmentLandmarks.disabled=false;document.querySelector<HTMLButtonElement>('#export-open')!.disabled=false;updateNudgeOutputs();buildReview();fitSummary.innerHTML=fitResult.landmarksChanged?`<strong>Accepted alignment restored</strong><br>Current landmarks differ from the saved alignment snapshot.`:`<strong>Accepted alignment restored</strong><br>Landmarks match the saved alignment snapshot.`}else clearFit()
-  renderAll();setStatus(restoreFit&&payload.fit?'Full session restored.':'Landmarks restored; fit was not restored.')
+async function saveSessionFile() {
+  await saveArtifact(
+    new Blob([JSON.stringify(currentSession(), null, 2)], { type: 'application/json' }),
+    'brainana-align_session.json',
+  )
+  setStatus('Session saved.')
 }
-function download(blob: Blob, name: string) { if (window.brainanaAlignSaveBlob) { void window.brainanaAlignSaveBlob(blob,name); return } const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000) }
-function matrixText(m: Mat4) { return m.map(r=>r.map(v=>v.toFixed(10)).join(' ')).join('\n')+'\n' }
 
-function saveTransformFiles() {
-  if(!fitResult) return
-  const payload={application:'Brainana Align',version:'0.7.0',direction:fitResult.direction,rms_mm:fitResult.rms,landmark_matrix:fitResult.landmarkMatrix,accepted_base_matrix:fitResult.baseMatrix,manual_adjustment:{translation_mm:fitResult.manual.slice(0,3),rotation_deg:fitResult.manual.slice(3)},forward_matrix:fitResult.matrix,inverse_matrix:fitResult.inverse,alignment_landmarks:fitResult.landmarkSnapshot,current_landmarks:landmarks,landmarks_changed_since_alignment:fitResult.landmarksChanged,fitted_at:fitResult.fittedAt}
-  download(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}),'brainana-align_registration.json')
-  download(new Blob([matrixText(fitResult.matrix)],{type:'text/plain'}),`from-${fitResult.direction.split('-')[0].toUpperCase()}_to-${fitResult.direction.split('-')[1].toUpperCase()}_rigid.txt`)
-  download(new Blob([matrixText(fitResult.inverse)],{type:'text/plain'}),`from-${fitResult.direction.split('-')[1].toUpperCase()}_to-${fitResult.direction.split('-')[0].toUpperCase()}_rigid.txt`)
+async function loadSessionFile(file: File) {
+  const payload = parseSessionPayload(JSON.parse(await file.text()))
+  const mismatch = sessionGeometryMismatches(payload.images, loaded)
+  let restoreFit = true
+  if (mismatch.length) {
+    restoreFit = false
+    const ok = window.confirm(`Image geometry does not match the saved session:\n\n${mismatch.join('\n')}\n\nLoad landmarks only?`)
+    if (!ok) return
+  }
+  snapshot()
+  landmarks = structuredClone(payload.landmarks)
+  selectedId = payload.selectedId
+  nextId = Math.max(payload.nextId, ...landmarks.map(landmark => landmark.id + 1), 1)
+  directionSelect.value = payload.direction
+  optimizationWindows = sanitizeOptimizationWindows(structuredClone(payload.optimizationWindows))
+  updateWindowControls()
+  if (restoreFit && payload.fit && loaded.mri && loaded.ct) {
+    fitResult = structuredClone(payload.fit)
+    if (!fitResult.landmarkSnapshot) fitResult.landmarkSnapshot = structuredClone(payload.landmarks)
+    if (fitResult.landmarksChanged === undefined) fitResult.landmarksChanged = false
+    if (!fitResult.fittedAt) fitResult.fittedAt = payload.savedAt
+    saveAligned.disabled = false
+    saveTransform.disabled = false
+    resetManual.disabled = false
+    resetLandmark.disabled = false
+    refineButton.disabled = false
+    restoreAlignmentLandmarks.disabled = false
+    document.querySelector<HTMLButtonElement>('#export-open')!.disabled = false
+    updateNudgeOutputs()
+    buildReview()
+    fitSummary.innerHTML = fitResult.landmarksChanged
+      ? '<strong>Accepted alignment restored</strong><br>Current landmarks differ from the saved alignment snapshot.'
+      : '<strong>Accepted alignment restored</strong><br>Landmarks match the saved alignment snapshot.'
+  } else {
+    clearFit()
+  }
+  renderAll()
+  setStatus(restoreFit && payload.fit ? 'Full session restored.' : 'Landmarks restored; fit was not restored.')
+}
+
+async function saveTransformFiles() {
+  if (!fitResult) return
+  await saveArtifacts(createRegistrationArtifacts({ appVersion: APP_VERSION, fit: fitResult, landmarks }))
+  setStatus('Transform files saved.')
 }
 
 async function saveAlignedImage() {
-  if(!fitResult) return
+  if (!fitResult) return
   const sourceMod: Modality = fitResult.direction === 'ct-mri' ? 'ct' : 'mri'
   const targetMod: Modality = fitResult.direction === 'ct-mri' ? 'mri' : 'ct'
-  const source=loaded[sourceMod],target=loaded[targetMod]
-  if(!source||!target) return setStatus('Both images must be loaded.',true)
+  const source = loaded[sourceMod]
+  const target = loaded[targetMod]
+  if (!source || !target) return setStatus('Both images must be loaded.', true)
   setStatus('Resampling aligned image…')
-  await new Promise(r=>setTimeout(r,20))
+  await new Promise(resolve => setTimeout(resolve, 20))
   const copy = makeResampledImage(source, target, fitResult.matrix)
-  download(new Blob([gzipSync(copy.toUint8Array())],{type:'application/gzip'}),`${sourceMod}_space-${targetMod.toUpperCase()}_rigid.nii.gz`)
+  await saveArtifact(
+    new Blob([gzipSync(copy.toUint8Array())], { type: 'application/gzip' }),
+    `${sourceMod}_space-${targetMod.toUpperCase()}_rigid.nii.gz`,
+  )
   setStatus('Aligned image saved.')
 }
 
@@ -1144,7 +961,7 @@ document.querySelector<HTMLInputElement>('#ct-file')!.addEventListener('change',
 document.querySelector('#new-pair')!.addEventListener('click',()=>{snapshot();const lm={id:nextId++,mri:null,ct:null,enabled:true};landmarks.push(lm);selectedId=lm.id;markLandmarksChanged();renderAll()})
 document.querySelector('#undo')!.addEventListener('click',()=>{const prev=history.pop();if(prev){landmarks=prev;markLandmarksChanged();renderAll()}})
 directionSelect.addEventListener('change',clearFit)
-saveTransform.addEventListener('click',saveTransformFiles)
+saveTransform.addEventListener('click',()=>saveTransformFiles().catch(err=>setStatus(err instanceof Error?err.message:String(err),true)))
 saveAligned.addEventListener('click',()=>saveAlignedImage().catch(err=>setStatus(err.message,true)))
 reviewMode.addEventListener('change', applyReviewAppearance)
 reviewOpacity.addEventListener('input', applyReviewAppearance)
@@ -1163,7 +980,7 @@ windowTarget.addEventListener('change',updateWindowControls)
 updateWindowControls()
 acceptRefine.addEventListener('click',acceptRefinement)
 rejectRefine.addEventListener('click',rejectRefinement)
-document.querySelector('#save-session')!.addEventListener('click',saveSessionFile)
+document.querySelector('#save-session')!.addEventListener('click',()=>saveSessionFile().catch(err=>setStatus(err instanceof Error?err.message:String(err),true)))
 document.querySelector<HTMLInputElement>('#load-session')!.addEventListener('change',e=>{const file=(e.target as HTMLInputElement).files?.[0];if(file)loadSessionFile(file).catch(err=>setStatus(err instanceof Error?err.message:String(err),true));(e.target as HTMLInputElement).value=''})
 refineBounds.addEventListener('change',()=>{
   if(refineBounds.value==='tight'){refineTranslationLimit.value='2';refineRotationLimit.value='1';refineTranslationStartStep.value='1';refineRotationStartStep.value='0.5'}
@@ -1179,7 +996,7 @@ document.querySelector('#export-open')!.addEventListener('click',openExport)
 document.querySelector('#export-close')!.addEventListener('click',closeExport)
 exportModal.addEventListener('click',e=>{if(e.target===exportModal)closeExport()})
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeExport()})
-document.querySelector('#save-session-export')!.addEventListener('click',saveSessionFile)
+document.querySelector('#save-session-export')!.addEventListener('click',()=>saveSessionFile().catch(err=>setStatus(err instanceof Error?err.message:String(err),true)))
 
 restoreAlignmentLandmarks.addEventListener('click',()=>{
   if(!fitResult)return
@@ -1211,4 +1028,13 @@ function resetAllViews() {
 
 document.querySelector('#reset-view')!.addEventListener('click', resetAllViews)
 
-setupViews(); setupReviewViews(); renderLandmarks(); installRuntimeIntegration(loadFiles, setStatus)
+const browserCapabilities = detectBrowserCapabilities()
+const browserReady = installBrowserCompatibilityBanner(browserCapabilities)
+if (browserReady) {
+  setupViews()
+  setupReviewViews()
+} else {
+  setStatus('This browser cannot initialize the required WebGL2 viewer.', true)
+}
+renderLandmarks()
+installRuntimeIntegration(loadFiles, setStatus)

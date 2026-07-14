@@ -26,3 +26,22 @@
 .optimization-window-box.preview{background:rgba(68,215,255,.2)}
 
 .image-placeholder{position:absolute;inset:0;z-index:4;display:flex;align-items:center;justify-content:center;padding:20px;text-align:center;color:#8fa5ba;background:radial-gradient(circle at center,rgba(20,34,48,.88),rgba(3,7,12,.97));font-size:13px;font-weight:600;pointer-events:none}.image-placeholder.loading{color:#bdd4e8}.image-placeholder.hidden{display:none}
+
+
+.browser-compatibility {
+  margin: 0;
+  padding: 10px 16px;
+  border-bottom: 1px solid #59410d;
+  background: #2b230f;
+  color: #ffe8a6;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  font-size: 13px;
+}
+.browser-compatibility.hidden { display: none; }
+.browser-compatibility.error { border-color: #7d2424; background: #311717; color: #ffd2d2; }
+.browser-compatibility strong { margin-right: 8px; }
+.browser-compatibility details { max-width: 48%; }
+.browser-compatibility code { white-space: normal; overflow-wrap: anywhere; }
