@@ -1,6 +1,8 @@
 import { authorizedFetch, requestJson } from './runtimeClient'
+import { remoteFetch, remoteJson } from './remoteEndpoint'
+export { setRemoteEndpoint } from './remoteEndpoint'
 
-export type ServerEntry = { name: string; path: string; directory: boolean }
+export type ServerEntry = { name: string; path: string; directory: boolean; size?: number; modified?: number }
 export type ServerList = { path: string; parent: string | null; entries: ServerEntry[] }
 export type SaveResult = { path?: string; exists?: boolean }
 
@@ -8,12 +10,12 @@ export function joinServerPath(a: string, b: string): string {
   return [a, b].filter(Boolean).join('/').replace(/\/{2,}/g, '/')
 }
 
-export async function listVolumeEntries(path = ''): Promise<ServerList> {
-  return requestJson<ServerList>(`/api/list?path=${encodeURIComponent(path)}`)
+export async function listVolumeEntries(path = '', showHidden = false): Promise<ServerList> {
+  return remoteJson<ServerList>(`/api/list?path=${encodeURIComponent(path)}&hidden=${showHidden ? '1' : '0'}`)
 }
 
 export async function readVolumeFile(path: string, signal?: AbortSignal): Promise<File> {
-  const response = await authorizedFetch(`/api/file?path=${encodeURIComponent(path)}`, { signal })
+  const response = await remoteFetch(`/api/file?path=${encodeURIComponent(path)}`, { signal })
   if (!response.ok) throw new Error((await response.text()) || `Unable to load ${path}`)
   const blob = await response.blob()
   return new File([blob], path.split('/').pop() || 'volume', {
@@ -21,12 +23,12 @@ export async function readVolumeFile(path: string, signal?: AbortSignal): Promis
   })
 }
 
-export async function listExportDirectories(path = ''): Promise<ServerList> {
-  return requestJson<ServerList>(`/api/save-list?path=${encodeURIComponent(path)}`)
+export async function listExportDirectories(path = '', showHidden = false): Promise<ServerList> {
+  return remoteJson<ServerList>(`/api/save-list?path=${encodeURIComponent(path)}&hidden=${showHidden ? '1' : '0'}`)
 }
 
 export async function createExportDirectory(path: string): Promise<void> {
-  await requestJson('/api/save-mkdir', {
+  await remoteJson('/api/save-mkdir', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ path }),
@@ -34,7 +36,7 @@ export async function createExportDirectory(path: string): Promise<void> {
 }
 
 export async function saveRemoteBlob(path: string, blob: Blob, overwrite: boolean): Promise<SaveResult> {
-  const response = await authorizedFetch(
+  const response = await remoteFetch(
     `/api/save-file?path=${encodeURIComponent(path)}&overwrite=${overwrite ? '1' : '0'}`,
     {
       method: 'POST',

@@ -32,6 +32,15 @@ const modulePath = path.join(temp, 'optimizationWindowInteraction.mjs')
 fs.writeFileSync(modulePath, output)
 const mod = await import(pathToFileURL(modulePath).href)
 
+const interactionSource = fs.readFileSync(source, 'utf8')
+assert.match(interactionSource, /view\.windowLayer\.parentElement \?\? view\.windowLayer/)
+assert.match(interactionSource, /addEventListener\('pointerdown', onPointerDown, true\)/)
+
+const mainSource = fs.readFileSync(path.join(root, 'source', 'src', 'main.ts'), 'utf8')
+const rejectHandler = mainSource.match(/onReject: \(\) => \{([\s\S]*?)\n\s*\},\n\s*\}\)/)?.[1] ?? ''
+assert.ok(rejectHandler, 'window rejection handler was not found')
+assert.doesNotMatch(rejectHandler, /delete optimizationWindows/, 'an invalid drag must preserve the existing window')
+
 // Regression: pointerup/pointercancel may lack an image coordinate. The last
 // valid coordinate must commit the visible drag rather than discard it.
 const axial = mod.windowBoundsForCompletedDrag([10,20,30], [40,60,30], null, 'axial', [1,1,1])

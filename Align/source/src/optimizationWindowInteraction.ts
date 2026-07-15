@@ -21,8 +21,11 @@ export type OptimizationWindowInteractionOptions = {
 export function installOptimizationWindowCapture(options: OptimizationWindowInteractionOptions): () => void {
   const { view } = options
   const onPointerDown = (event: PointerEvent) => beginOptimizationWindowDrag(event, options)
-  view.windowLayer.addEventListener('pointerdown', onPointerDown)
-  return () => view.windowLayer.removeEventListener('pointerdown', onPointerDown)
+  const interactionSurface = view.windowLayer.parentElement ?? view.windowLayer
+  // Capture at the view-card boundary. This is independent of canvas/SVG stacking
+  // and gives all six MRI/CT views exactly the same input path.
+  interactionSurface.addEventListener('pointerdown', onPointerDown, true)
+  return () => interactionSurface.removeEventListener('pointerdown', onPointerDown, true)
 }
 
 function beginOptimizationWindowDrag(event: PointerEvent, options: OptimizationWindowInteractionOptions) {

@@ -1,5 +1,9 @@
 # Feature parity status
 
+## Electron desktop prototype
+
+The Electron target uses the same compiled frontend as the browser release, including MRI/CT loading, visualization, landmarks, rigid fitting, optimization windows, refinement, ROI operations, sessions, and exports. Local loading is the default. Remote MRI/CT loading and remote export, saved profiles, interactive system-SSH authentication, and structured SFTP browsing are available on demand without a startup mode prompt. A profile's starting directory is only the initial location; users can navigate throughout the remote filesystem wherever their SSH account has permission.
+
 This release reconstructs the retained v0.15.4 frontend behavior in readable TypeScript. The recovered minified frontend and injected export patch are not part of the production runtime.
 
 | Feature | v0.15.4 reference | current release | Source status |

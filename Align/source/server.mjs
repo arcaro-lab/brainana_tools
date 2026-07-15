@@ -27,6 +27,7 @@ const portFile = arg('--port-file', '')
 const handshakeFile = arg('--handshake-file', '')
 const errorFile = arg('--error-file', '')
 const mode = arg('--mode', 'local')
+const allowedOrigin = arg('--allowed-origin', '')
 const suppliedSessionToken = arg('--session-token', process.env.BRAINANA_SESSION_TOKEN || '')
 const sessionToken = suppliedSessionToken || crypto.randomBytes(32).toString('hex')
 const maxJsonBytes = numberArg('--max-json-bytes', 1024 * 1024)
@@ -85,6 +86,7 @@ const json = (res, status, object) => {
     'content-length': Buffer.byteLength(body),
     'cache-control': 'no-store',
     'x-content-type-options': 'nosniff',
+    ...(allowedOrigin ? { 'access-control-allow-origin': allowedOrigin, 'vary': 'origin' } : {}),
   })
   res.end(body)
 }
@@ -93,6 +95,7 @@ const text = (res, status, message) => {
     'content-type': 'text/plain; charset=utf-8',
     'cache-control': 'no-store',
     'x-content-type-options': 'nosniff',
+    ...(allowedOrigin ? { 'access-control-allow-origin': allowedOrigin, 'vary': 'origin' } : {}),
   })
   res.end(message)
 }
@@ -110,12 +113,12 @@ function validateApiRequest(req, res) {
     return false
   }
   const origin = req.headers.origin
-  if (origin && origin !== `http://${expectedHost}`) {
+  if (origin && origin !== `http://${expectedHost}` && origin !== allowedOrigin) {
     text(res, 403, 'Cross-origin request rejected')
     return false
   }
   const fetchSite = req.headers['sec-fetch-site']
-  if (fetchSite && !['same-origin', 'none'].includes(fetchSite)) {
+  if (fetchSite && !['same-origin', 'same-site', 'none'].includes(fetchSite)) {
     text(res, 403, 'Cross-site request rejected')
     return false
   }
@@ -242,7 +245,7 @@ async function streamRequestToFile(req, filename, maximum) {
   }
 }
 
-async function list(rel, dirsOnly = false) {
+async function list(rel, dirsOnly = false, showHidden = false) {
   if (mode === 'local') {
     const { clean, resolved } = safeLocal(rel)
     const stat = await fs.promises.stat(resolved)
@@ -250,10 +253,9 @@ async function list(rel, dirsOnly = false) {
     const dirents = await fs.promises.readdir(resolved, { withFileTypes: true })
     const entries = []
     for (const entry of dirents) {
-      if (entry.name.startsWith('.') || (!entry.isDirectory() && (dirsOnly || !isAllowed(entry.name)))) continue
-      let size
-      if (entry.isFile()) size = (await fs.promises.stat(path.join(resolved, entry.name))).size
-      entries.push({ name: entry.name, path: path.posix.join(clean, entry.name), directory: entry.isDirectory(), size })
+      if ((!showHidden && entry.name.startsWith('.')) || (!entry.isDirectory() && (dirsOnly || !isAllowed(entry.name)))) continue
+      const attrs = await fs.promises.stat(path.join(resolved, entry.name))
+      entries.push({ name: entry.name, path: path.posix.join(clean, entry.name), directory: entry.isDirectory(), size: entry.isFile() ? attrs.size : undefined, modified: Math.floor(attrs.mtimeMs / 1000) })
     }
     entries.sort((a, b) => Number(b.directory) - Number(a.directory) || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
     return { path: clean, parent: clean ? (path.posix.dirname(clean) === '.' ? '' : path.posix.dirname(clean)) : null, entries: dirsOnly ? entries.filter(entry => entry.directory) : entries }
@@ -265,10 +267,10 @@ async function list(rel, dirsOnly = false) {
     const result = []
     for (const item of await sftp.list(resolved)) {
       const name = item.name
-      if (!name || name === '.' || name === '..' || name.startsWith('.')) continue
+      if (!name || name === '.' || name === '..' || (!showHidden && name.startsWith('.'))) continue
       const directory = sftpIsDirectory(item.attrs) || item.longname.startsWith('d')
       if (!directory && (dirsOnly || !isAllowed(name))) continue
-      result.push({ name, path: path.posix.join(clean, name), directory, size: directory ? undefined : item.attrs.size })
+      result.push({ name, path: path.posix.join(clean, name), directory, size: directory ? undefined : item.attrs.size, modified: item.attrs.mtime })
     }
     return result
   })
@@ -403,6 +405,16 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${host}`)
     if (url.pathname.startsWith('/api/')) {
+      if (req.method === 'OPTIONS' && allowedOrigin && req.headers.origin === allowedOrigin) {
+        res.writeHead(204, {
+          'access-control-allow-origin': allowedOrigin,
+          'access-control-allow-methods': 'GET, POST, OPTIONS',
+          'access-control-allow-headers': 'content-type, x-brainana-session',
+          'access-control-max-age': '600',
+          'vary': 'origin',
+        })
+        return res.end()
+      }
       if (!validateApiRequest(req, res)) return
       if (url.pathname === '/api/health') {
         if (!requireMethod(req, res, ['GET'])) return
@@ -423,7 +435,7 @@ const server = http.createServer(async (req, res) => {
       }
       if (url.pathname === '/api/list') {
         if (!requireMethod(req, res, ['GET'])) return
-        return json(res, 200, await list(url.searchParams.get('path') || '', false))
+        return json(res, 200, await list(url.searchParams.get('path') || '', false, url.searchParams.get('hidden') === '1'))
       }
       if (url.pathname === '/api/local-export-folder') {
         if (!requireMethod(req, res, ['GET'])) return
@@ -454,7 +466,7 @@ const server = http.createServer(async (req, res) => {
       }
       if (url.pathname === '/api/save-list') {
         if (!requireMethod(req, res, ['GET'])) return
-        return json(res, 200, await list(url.searchParams.get('path') || '', true))
+        return json(res, 200, await list(url.searchParams.get('path') || '', true, url.searchParams.get('hidden') === '1'))
       }
       if (url.pathname === '/api/save-mkdir') {
         if (!requireMethod(req, res, ['POST'])) return
@@ -490,6 +502,7 @@ const server = http.createServer(async (req, res) => {
             'content-length': stat.size,
             'content-disposition': `attachment; filename="${path.basename(resolved).replaceAll('"', '')}"`,
             'x-content-type-options': 'nosniff',
+            ...(allowedOrigin ? { 'access-control-allow-origin': allowedOrigin, 'vary': 'origin' } : {}),
           })
           return fs.createReadStream(resolved).pipe(res)
         }
@@ -503,6 +516,7 @@ const server = http.createServer(async (req, res) => {
           'content-length': size,
           'content-disposition': `attachment; filename="${path.posix.basename(resolved).replaceAll('"', '')}"`,
           'x-content-type-options': 'nosniff',
+          ...(allowedOrigin ? { 'access-control-allow-origin': allowedOrigin, 'vary': 'origin' } : {}),
         })
         let stopped = false
         const stop = () => { stopped = true; sftp.end().catch(() => {}) }
@@ -538,7 +552,7 @@ const server = http.createServer(async (req, res) => {
       'x-content-type-options': 'nosniff',
       'referrer-policy': 'no-referrer',
       'cross-origin-opener-policy': 'same-origin',
-      'content-security-policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+      'content-security-policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' http://127.0.0.1:*; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
     }
     res.writeHead(200, headers)
     if (req.method === 'HEAD') return res.end()

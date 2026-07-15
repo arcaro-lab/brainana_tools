@@ -8,7 +8,7 @@ import { applyMat4, fitRigid, invertRigid, multiplyMat4, rigidDelta, type Mat4, 
 import { countOptimizationWindows, optimizationConstraint as getOptimizationConstraint, planeAxes, sanitizeOptimizationWindows, withinOptimizationWindows } from './optimizationWindows'
 import { installOptimizationWindowCapture } from './optimizationWindowInteraction'
 import { installHoverKeyboardPan, installProjectionRefresh, installWheelZoomAndSlice, isTypingTarget, panViewInScreenDirection, type HoveredView } from './viewInteraction'
-import { canvasPointToImageOnCurrentSlice, coordinateLabel, isFiniteVec3, planeDepthAxis } from './coordinateProjection'
+import { canvasPointToImageOnCurrentSlice, clientPointToImageOnCurrentSlice, coordinateLabel, isFiniteVec3, planeDepthAxis } from './coordinateProjection'
 import { setOrthogonalCrosshairs, setReviewCrosshairs } from './crosshairController'
 import { renderModalityMarkers, renderReviewLandmarks } from './landmarkRenderer'
 import { VERSION as APP_VERSION } from './version'
@@ -26,7 +26,7 @@ const planeTypes: Record<Plane, SLICE_TYPE> = {
 const app = document.querySelector<HTMLDivElement>('#app')!
 app.innerHTML = `
 <header class="topbar">
-  <div class="brand">Brainana Align <span>v0.16.26-docs.1</span></div>
+  <div class="brand">Brainana Align <span>v0.17.6-platforms.1</span></div>
   <div class="workflow-group image-loads">
     <label class="load compact-load" title="Load an MRI volume"><input id="mri-file" type="file" multiple accept=".nii,.nii.gz,.hdr,.img,.img.gz,.head,.brik,.brik.gz,.mgh,.mgz,.nrrd,.nhdr,.mif,.mha,.mhd,.raw,.v,.v16,.vmr,.npy,.npz,.fib,.src,.gz,application/gzip,application/x-gzip,application/octet-stream"><strong id="mri-name">Load MRI</strong></label>
     <label class="load compact-load" title="Load a CT volume"><input id="ct-file" type="file" multiple accept=".nii,.nii.gz,.hdr,.img,.img.gz,.head,.brik,.brik.gz,.mgh,.mgz,.nrrd,.nhdr,.mif,.mha,.mhd,.raw,.v,.v16,.vmr,.npy,.npz,.fib,.src,.gz,application/gzip,application/x-gzip,application/octet-stream"><strong id="ct-name">Load CT</strong></label>
@@ -693,21 +693,7 @@ function renderOptimizationWindow(view: View) {
 }
 
 function eventMm(view: View, event: PointerEvent): Vec3 | null {
-  const rect = view.canvas.getBoundingClientRect()
-  if (rect.width <= 0 || rect.height <= 0) return null
-  const pos: [number,number] = [
-    (event.clientX-rect.left)*(view.canvas.width/rect.width),
-    (event.clientY-rect.top)*(view.canvas.height/rect.height),
-  ]
-  const rawFrac = view.nv.canvasPos2frac(pos)
-  if (!rawFrac) return null
-  const frac = Array.from(rawFrac, Number)
-  if (frac.length < 3 || !frac.slice(0,3).every(Number.isFinite)) return null
-  const depthAxis = view.plane === 'sagittal' ? 0 : view.plane === 'coronal' ? 1 : 2
-  frac[depthAxis] = Number(view.nv.scene.crosshairPos[depthAxis])
-  const mm = Array.from(view.nv.frac2mm(frac), Number)
-  if (mm.length < 3 || !mm.slice(0,3).every(Number.isFinite)) return null
-  return [mm[0],mm[1],mm[2]]
+  return clientPointToImageOnCurrentSlice(view, event.clientX, event.clientY)
 }
 
 function installWindowCapture(view: View) {
@@ -728,9 +714,12 @@ function installWindowCapture(view: View) {
       setStatus(`${view.modality.toUpperCase()} ${view.plane} optimization window set.`)
     },
     onReject: () => {
-      delete optimizationWindows[view.modality][view.plane]
-      optimizationWindows = sanitizeOptimizationWindows(optimizationWindows)
-      setStatus('Optimization window was too small and was not saved.', true)
+      // A missed coordinate or tiny replacement drag must never erase an existing
+      // valid constraint. Clear windows is the only destructive UI action.
+      const hasExisting = Boolean(optimizationWindows[view.modality][view.plane])
+      setStatus(hasExisting
+        ? `${view.modality.toUpperCase()} ${view.plane} window was not changed; the existing window remains active.`
+        : `${view.modality.toUpperCase()} ${view.plane} window was not set. This plane remains fully unrestricted.`)
       updateWindowControls()
     },
   })
@@ -974,7 +963,7 @@ document.querySelectorAll<HTMLButtonElement>('#nudge-controls button').forEach(b
 resetManual.addEventListener('click',()=>{if(!fitResult)return;fitResult.manual=[0,0,0,0,0,0];updateCurrentTransform(true);setStatus('Manual nudges reset.')})
 resetLandmark.addEventListener('click',()=>{if(!fitResult)return;fitResult.baseMatrix=fitResult.landmarkMatrix;fitResult.manual=[0,0,0,0,0,0];updateCurrentTransform(true);setStatus('Restored the original landmark fit.')})
 refineButton.addEventListener('click',()=>runRefinement())
-defineWindows.addEventListener('click',()=>{definingWindows=!definingWindows;updateWindowControls();renderMarkers('mri');renderMarkers('ct');setStatus(definingWindows?'Drag a rectangle in any selected MRI or CT panel. Draw in multiple planes to define a 3D block.':'Optimization-window definition finished.')})
+defineWindows.addEventListener('click',()=>{definingWindows=!definingWindows;updateWindowControls();renderMarkers('mri');renderMarkers('ct');setStatus(definingWindows?'Drag a rectangle in any selected MRI or CT panel. Every plane you leave without a window remains fully unrestricted.':'Optimization-window definition finished. Planes without windows will use all voxels.')})
 clearWindows.addEventListener('click',()=>{optimizationWindows={mri:{},ct:{}};updateWindowControls();renderMarkers('mri');renderMarkers('ct');setStatus('Optimization windows cleared.')})
 windowTarget.addEventListener('change',updateWindowControls)
 updateWindowControls()

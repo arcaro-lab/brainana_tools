@@ -1,4 +1,5 @@
 import { installExportDestination } from './exportDestination'
+import { installElectronRemoteIntegration } from './electronRemoteIntegration'
 import { isRemoteRuntime, loadRuntimeConfig } from './runtimeClient'
 import {
   createWorkstationBrowser,
@@ -19,6 +20,7 @@ export type { ServerEntry, ServerList } from './filesystemClient'
 export function installRuntimeIntegration(loadFiles: LoadFiles, setStatus: Status): void {
   installExportDestination()
   const workstationBrowser = createWorkstationBrowser(loadFiles, setStatus)
+  if (installElectronRemoteIntegration(workstationBrowser, setStatus)) return
   void loadRuntimeConfig()
     .then(config => {
       if (isRemoteRuntime(config)) workstationBrowser.installButtons()

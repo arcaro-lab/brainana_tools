@@ -1,5 +1,13 @@
 # Brainana Align documentation
 
+## Electron desktop prototype
+
+The Electron target opens the production interface in its own application window and does not launch an external browser. The scientific frontend remains shared with the browser application.
+
+Local MRI/CT loading is the default. Each load control can also open an on-demand remote workstation connection using saved non-secret profiles, system SSH authentication in Terminal, and structured SFTP browsing.
+
+Build on an M-chip Mac with `./scripts/build-electron-macos.sh`. The app is written to `source/electron-dist/mac-arm64/Brainana Align Desktop.app`.
+
 Brainana Align is a self-contained browser-based MRI and CT alignment application. The current macOS package includes Apple Silicon and Intel Node runtimes, while the shared source contains the platform-neutral frontend, server, scientific code, tests, and platform packaging foundations.
 
 ## Documentation set
