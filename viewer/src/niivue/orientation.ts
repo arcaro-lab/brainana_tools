@@ -98,11 +98,19 @@ export class OrientationGizmo {
   }
 
   start(): void {
+    if (this.#raf) return // already running — don't stack rAF loops
     const loop = (): void => {
       this.#draw()
       this.#raf = requestAnimationFrame(loop)
     }
     this.#raf = requestAnimationFrame(loop)
+  }
+
+  // Show/hide the AP/SI/LR widget (and pause its draw loop while hidden).
+  setVisible(on: boolean): void {
+    this.#svg.style.display = on ? '' : 'none'
+    if (on) this.start()
+    else this.stop()
   }
 
   stop(): void {

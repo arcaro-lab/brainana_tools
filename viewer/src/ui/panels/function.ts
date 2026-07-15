@@ -1,10 +1,11 @@
-// Docked "Function" picker (top of the side panel): pick a retinotopy (Polar/Eccentricity) or
-// somatotopy (Phase) map, and tune the F-stat threshold, opacity, and surface brightness. Color
-// controls (colormap, display range, clip, legend) live in the shared "Color display" section at
-// the bottom of the side panel, not here.
+// Docked "function" picker (top of the side panel): pick a retinotopy (Polar/Eccentricity) or
+// somatotopy (Phase) map from a dropdown, and tune the F-stat threshold, opacity, and surface
+// brightness. Color controls (colormap, display range, clip, legend) live in the shared "Color
+// display" section at the bottom of the side panel, not here.
 import { functionalModes, type FunctionalKind, type FunctionalMode } from '../../data/functional.ts'
 import type { Manifest } from '../../types.ts'
-import { h } from '../dom.ts'
+import { h, selectField, type SelectOption } from '../dom.ts'
+import { createSlider, type Slider } from '../components/slider.ts'
 
 export interface FunctionChoice {
   kind: FunctionalKind
@@ -30,13 +31,8 @@ export interface FunctionPanel {
 export const choiceKey = (c: FunctionChoice): string => `${c.kind}:${c.mode.label}`
 
 export function createFunctionPanel(manifest: Manifest, cb: FunctionPanelCallbacks): FunctionPanel {
-  const buttons = new Map<string, HTMLButtonElement>()
-  const row = h('div', { class: 'chip-row' })
-
-  const noneBtn = h('button', { type: 'button', class: 'chip' }, ['None']) as HTMLButtonElement
-  noneBtn.addEventListener('click', () => cb.onSelect(null))
-  buttons.set('none', noneBtn)
-  row.append(noneBtn)
+  const choices = new Map<string, FunctionChoice>()
+  const options: SelectOption[] = [{ value: 'none', label: 'None' }]
 
   const kinds: FunctionalKind[] = []
   if (manifest.function?.retinotopy) kinds.push('retinotopy')
@@ -47,56 +43,49 @@ export function createFunctionPanel(manifest: Manifest, cb: FunctionPanelCallbac
     for (const mode of functionalModes(kind, map.frames)) {
       const choice: FunctionChoice = { kind, mode }
       const key = choiceKey(choice)
-      const b = h('button', { type: 'button', class: 'chip' }, [mode.label]) as HTMLButtonElement
-      b.addEventListener('click', () => cb.onSelect(choice))
-      buttons.set(key, b)
-      row.append(b)
+      choices.set(key, choice)
+      options.push({ value: key, label: mode.label })
     }
   }
 
-  const thresh = h('input', { type: 'range', min: '0', max: '1', step: '0.1', value: '0', disabled: true }) as HTMLInputElement
-  const threshLabel = h('span', { class: 'muted' }, ['—'])
-  thresh.addEventListener('input', () => {
-    threshLabel.textContent = `F ≥ ${Number(thresh.value).toFixed(2)}`
-    cb.onThreshold(Number(thresh.value))
+  const picker = selectField('Map', options, (value) => cb.onSelect(value === 'none' ? null : (choices.get(value) ?? null)))
+
+  const thresh: Slider = createSlider({
+    label: 'F-stat',
+    min: 0,
+    max: 1,
+    step: 0.1,
+    value: 0,
+    disabled: true,
+    onInput: (v) => cb.onThreshold(v),
   })
-
-  const opacity = h('input', { type: 'range', min: '0', max: '1', step: '0.05', value: '0.85' }) as HTMLInputElement
-  opacity.addEventListener('input', () => cb.onOpacity(Number(opacity.value)))
-
+  const opacity = createSlider({ label: 'Opacity', min: 0, max: 1, step: 0.05, value: 0.85, onInput: (v) => cb.onOpacity(v) })
   // Function on the 3D surface is always shown for the active map; only the LUT brightness is
   // adjustable (blends toward white).
-  const brightness = h('input', { type: 'range', min: '0.5', max: '2', step: '0.05', value: '1.25' }) as HTMLInputElement
-  brightness.addEventListener('input', () => cb.onBrightness(Number(brightness.value)))
+  const brightness = createSlider({ label: 'Surface brightness', min: 0.5, max: 2, step: 0.05, value: 1.25, onInput: (v) => cb.onBrightness(v) })
 
   const element = h('div', { class: 'side-panel', hidden: true }, [
-    h('div', { class: 'side-panel-head' }, ['Function']),
-    row,
-    h('div', { class: 'field' }, [h('span', {}, ['F-stat threshold ', threshLabel]), thresh]),
-    h('label', { class: 'field' }, [h('span', {}, ['Opacity']), opacity]),
-    h('label', { class: 'field' }, [h('span', {}, ['Surface brightness']), brightness]),
+    h('div', { class: 'side-panel-head' }, ['function']),
+    picker.element,
+    thresh.element,
+    opacity.element,
+    brightness.element,
   ])
 
   return {
     element,
     toggle: () => (element.hidden = !element.hidden),
     hide: () => (element.hidden = true),
-    setActive: (key) => {
-      for (const [k, b] of buttons) b.classList.toggle('active', k === (key ?? 'none'))
-    },
+    setActive: (key) => picker.setValue(key ?? 'none'),
     setThresholdBounds: (min, max, value) => {
       if (!(max > min)) {
-        thresh.disabled = true
-        threshLabel.textContent = 'no F-stat'
+        thresh.setDisabled(true)
         return
       }
-      thresh.min = String(min)
-      thresh.max = String(max)
-      thresh.step = String((max - min) / 100 || 0.1)
-      thresh.value = String(value)
-      thresh.disabled = false
-      threshLabel.textContent = `F ≥ ${value.toFixed(2)}`
+      thresh.setBounds(min, max, (max - min) / 100 || 0.1)
+      thresh.setValue(value)
+      thresh.setDisabled(false)
     },
-    brightness: () => Number(brightness.value),
+    brightness: () => brightness.value(),
   }
 }

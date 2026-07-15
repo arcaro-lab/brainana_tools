@@ -21,7 +21,8 @@ import { createAtlasPanel, type AtlasPanel, type AtlasSelection } from './panels
 import { createFunctionPanel, choiceKey, type FunctionPanel, type FunctionChoice } from './panels/function.ts'
 import { createMorphologyPanel, type MorphologyPanel, type MarkerMode } from './panels/morphology.ts'
 import { drawVisualField } from './visualFieldPlot.ts'
-import { h, errorText } from './dom.ts'
+import { h, errorText, selectField } from './dom.ts'
+import { createSlider } from './components/slider.ts'
 import { mountSourcesDialog } from './dialogs/sources.ts'
 import { buildColormapAssets, availableColormaps } from '../niivue/colormaps.ts'
 import { buildColormapRegistry, type ColormapInfo } from '../data/colormap.ts'
@@ -105,7 +106,7 @@ const LAYOUTS: Array<{ k: Layout; glyph: string; title: string }> = [
 ]
 // Only the wired category tabs are shown. Imported/Import/Export are deferred Phase-3 work and
 // were previously rendered permanently-disabled (reading as broken) — hidden until implemented.
-const PANEL_BUTTONS = ['Atlases', 'Morphology', 'Function']
+const PANEL_BUTTONS = ['atlas', 'morphology', 'function']
 // Camera view presets shown in the surf row (Req 4). Lateral/Medial are hemisphere-aware.
 const VIEW_PRESETS: Array<{ k: 'lateral' | 'medial' | 'ventral' | 'dorsal' | 'anterior' | 'posterior'; label: string }> = [
   { k: 'lateral', label: 'Lat' },
@@ -186,6 +187,51 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
     return b
   })
 
+  // --- Marker / Crosshair toolbar controls: show/hide toggles, size, and placement mode ---
+  const markerCheck = h('input', { type: 'checkbox' }) as HTMLInputElement
+  markerCheck.checked = true
+  const crosshairCheck = h('input', { type: 'checkbox' }) as HTMLInputElement
+  crosshairCheck.checked = true
+  const orientCheck = h('input', { type: 'checkbox' }) as HTMLInputElement
+  orientCheck.checked = true
+  markerCheck.addEventListener('change', () => {
+    marker?.setVisible(markerCheck.checked)
+    if (markerCheck.checked) placeMarker()
+  })
+  crosshairCheck.addEventListener('change', () => view?.setCrosshairVisible(crosshairCheck.checked))
+  orientCheck.addEventListener('change', () => view?.setSliceOrientationVisible(orientCheck.checked))
+  const markerSize = createSlider({
+    label: 'Size',
+    min: 0.3,
+    max: 3,
+    step: 0.1,
+    value: 1,
+    onInput: (v) => {
+      marker?.setSize(v)
+      placeMarker()
+    },
+  })
+  const markerModeSel = selectField(
+    'Mode',
+    [
+      { value: 'crosshair3d', label: '3D crosshair' },
+      { value: 'nearestNode', label: 'Nearest vertex' },
+    ],
+    (value) => {
+      markerMode = value as MarkerMode
+      placeMarker()
+    },
+  )
+  markerModeSel.setValue('nearestNode')
+  // Apply the current toolbar states to the freshly-created view/marker (called on subject load).
+  const syncMarkerControls = (): void => {
+    marker?.setSize(markerSize.value())
+    marker?.setVisible(markerCheck.checked)
+    view?.setCrosshairVisible(crosshairCheck.checked)
+    view?.setSliceOrientationVisible(orientCheck.checked)
+    markerMode = markerModeSel.value() as MarkerMode
+  }
+
   // Two-row × four-column grid (fills column-by-column via grid-auto-flow: column). Full-height
   // hairline dividers (`tb-divide`, each spanning both rows) separate the logical clusters.
   const tbDivide = (): HTMLElement => h('div', { class: 'tb-divide' })
@@ -198,16 +244,31 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
     h('div', { class: 'tb-cell' }, [datasetBtn]),
     h('div', { class: 'tb-cell' }, [h('label', { class: 'tb-field' }, ['Monkey', monkeySelect])]),
     tbDivide(),
-    // col 3: vol + layout icons (row 1) · surf + LH/RH + view presets (row 2)
-    h('div', { class: 'tb-cell' }, [h('label', { class: 'tb-field inline' }, [volCheck, h('span', {}, ['vol']), volSelect]), h('div', { class: 'montage' }, layoutBtns)]),
+    // col 3: vol (row 1) · surf + LH/RH (row 2)
+    h('div', { class: 'tb-cell' }, [h('label', { class: 'tb-field inline' }, [volCheck, h('span', {}, ['vol']), volSelect])]),
     h('div', { class: 'tb-cell' }, [
       h('label', { class: 'tb-field inline' }, [surfCheck, h('span', {}, ['surf']), surfSelect]),
       h('label', { class: 'tb-field inline' }, [lhCheck, h('span', {}, ['LH'])]),
       h('label', { class: 'tb-field inline' }, [rhCheck, h('span', {}, ['RH'])]),
-      h('div', { class: 'views' }, viewBtns),
     ]),
     tbDivide(),
-    // col 4: category tabs (row 1); row 2 reserved for future Import/Export controls.
+    // col 3b: view section — slice montage layouts (row 1) · surface view presets (row 2)
+    h('div', { class: 'tb-cell' }, [h('div', { class: 'montage' }, layoutBtns)]),
+    h('div', { class: 'tb-cell' }, [h('div', { class: 'views' }, viewBtns)]),
+    tbDivide(),
+    // col 4: Marker / Crosshair — crosshair + AP/SI/LR in the vol row (row 1); surface marker +
+    // size + placement mode in the surf row (row 2).
+    h('div', { class: 'tb-cell' }, [
+      h('label', { class: 'tb-field inline' }, [crosshairCheck, h('span', {}, ['crosshair'])]),
+      h('label', { class: 'tb-field inline' }, [orientCheck, h('span', {}, ['AP/SI/LR'])]),
+    ]),
+    h('div', { class: 'tb-cell' }, [
+      h('label', { class: 'tb-field inline' }, [markerCheck, h('span', {}, ['marker'])]),
+      markerSize.element,
+      markerModeSel.element,
+    ]),
+    tbDivide(),
+    // col 5: category tabs (row 1); row 2 reserved for future Import/Export controls.
     h('div', { class: 'tb-cell panels' }, panelBtns),
     h('div', { class: 'tb-cell' }, []),
   ])
@@ -231,7 +292,7 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
   // by the highlighted chip in the docked panel above, so a descriptive caption is redundant.
   const funcSlot = h('div', { class: 'side-slot', hidden: true })
   const morphSlot = h('div', { class: 'side-slot', hidden: true })
-  const sidePlaceholder = h('div', { class: 'legend-title muted' }, ['Select Atlases, Morphology, or Function above.'])
+  const sidePlaceholder = h('div', { class: 'legend-title muted' }, ['Select atlas, morphology, or function above.'])
   const sideContent = h('div', { class: 'side-content' }, [legendSlot, funcSlot, morphSlot, sidePlaceholder])
   // Docked at the bottom of the side panel: the shared "Color display" section (colormap + legend +
   // display range + clip), mounted once the view/colormaps exist. Applies to the active overlay.
@@ -239,7 +300,7 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
   const atlasLegend = h('aside', { class: 'atlas-legend' }, [sidePicker, sideContent, colorDock])
   const infoPanel = h('section', { class: 'info-panel' }, [
     h('div', { class: 'info-col' }, [h('h3', {}, ['Coordinates']), h('div', { id: 'report-coordinates', class: 'muted' }, ['—'])]),
-    h('div', { class: 'info-col' }, [h('h3', {}, ['Anatomy']), h('div', { id: 'report-anatomy', class: 'muted' }, ['—'])]),
+    h('div', { class: 'info-col' }, [h('h3', {}, ['Atlas']), h('div', { id: 'report-anatomy', class: 'muted' }, ['—'])]),
     h('div', { class: 'info-col' }, [h('h3', {}, ['Surface']), h('div', { id: 'report-surface', class: 'muted' }, ['—'])]),
     h('div', { class: 'info-col' }, [h('h3', {}, ['Function']), h('div', { id: 'report-function', class: 'muted' }, ['—'])]),
     h('div', { class: 'info-col' }, [
@@ -272,6 +333,52 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
   const main = h('main', { class: 'dashboard' }, [viewerArea, atlasLegend, panelResizer, infoResizer, infoPanel, placeholder, loadingOverlay])
 
   root.append(toolbar, main)
+
+  // #4 Draggable seams between the 5 bottom info subpanels. Each seam adjusts the px width of the
+  // column to its left (cols 1..4, stored in --info-cN); the last column flexes to fill. The handles
+  // float over the seams and are repositioned whenever the panel or a column resizes.
+  {
+    const cols = Array.from(infoPanel.querySelectorAll('.info-col')) as HTMLElement[]
+    const MIN_COL = 90
+    const handles: HTMLElement[] = []
+    const reposition = (): void => {
+      const base = infoPanel.getBoundingClientRect().left
+      handles.forEach((handle, k) => {
+        handle.style.left = `${cols[k].getBoundingClientRect().right - base}px`
+      })
+    }
+    for (let k = 0; k < cols.length - 1; k++) {
+      const handle = h('div', { class: 'info-vresizer', title: 'Drag to resize the subpanels' })
+      let dragging = false
+      handle.addEventListener('pointerdown', (e) => {
+        dragging = true
+        handle.setPointerCapture(e.pointerId)
+        e.preventDefault()
+      })
+      handle.addEventListener('pointermove', (e) => {
+        if (!dragging) return
+        const left = cols[k].getBoundingClientRect().left
+        const w = Math.max(MIN_COL, e.clientX - left)
+        infoPanel.style.setProperty(`--info-c${k + 1}`, `${Math.round(w)}px`)
+        reposition()
+      })
+      const end = (e: PointerEvent): void => {
+        if (!dragging) return
+        dragging = false
+        try {
+          handle.releasePointerCapture(e.pointerId)
+        } catch {
+          /* pointer already released */
+        }
+      }
+      handle.addEventListener('pointerup', end)
+      handle.addEventListener('pointercancel', end)
+      handles.push(handle)
+      infoPanel.append(handle)
+    }
+    reposition()
+    new ResizeObserver(reposition).observe(infoPanel)
+  }
 
   // Drag the boundary between the viewer area and the right atlas panel: update the
   // --legend-width grid track live (the dashboard grid is `minmax(0,1fr) var(--legend-width)`).
@@ -333,6 +440,65 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
   let currentNode: SurfaceNode | null = null
   let surfaceScaled = false // apply the per-surface zoom only once per subject (Req 11)
 
+  // Editable crosshair coordinates: X/Y/Z (world mm) and I/J/K (base-volume voxel). Typing a value
+  // moves the crosshair; the fields refresh from the crosshair on each move (except the one being
+  // edited, so typing isn't clobbered). Built once; `update()` writes values, never rebuilds the DOM.
+  const coordEditor = (() => {
+    const num = (step: string): HTMLInputElement => h('input', { type: 'number', step, class: 'coord-num' }) as HTMLInputElement
+    const xIn = num('0.1')
+    const yIn = num('0.1')
+    const zIn = num('0.1')
+    const iIn = num('1')
+    const jIn = num('1')
+    const kIn = num('1')
+    const hemiEl = h('dd', {}, ['—'])
+    const commitMm = (): void => {
+      const mm: [number, number, number] = [Number(xIn.value), Number(yIn.value), Number(zIn.value)]
+      if (mm.some((v) => Number.isNaN(v))) return
+      view?.moveCrosshairToWorld(mm)
+    }
+    const commitVox = (): void => {
+      const ijk: [number, number, number] = [Number(iIn.value), Number(jIn.value), Number(kIn.value)]
+      if (ijk.some((v) => Number.isNaN(v))) return
+      const mm = view?.voxToWorld(ijk)
+      if (mm) view?.moveCrosshairToWorld(mm)
+    }
+    for (const inp of [xIn, yIn, zIn]) inp.addEventListener('change', commitMm)
+    for (const inp of [iIn, jIn, kIn]) inp.addEventListener('change', commitVox)
+    const row = (label: string, input: HTMLElement): Node[] => [h('dt', {}, [label]), h('dd', {}, [input])]
+    const el = h('dl', { class: 'coord-dl' }, [
+      ...row('X (mm)', xIn),
+      ...row('Y (mm)', yIn),
+      ...row('Z (mm)', zIn),
+      ...row('I', iIn),
+      ...row('J', jIn),
+      ...row('K', kIn),
+      h('dt', {}, ['hemisphere']),
+      hemiEl,
+    ])
+    const put = (inp: HTMLInputElement, v: string): void => {
+      if (document.activeElement !== inp) inp.value = v
+    }
+    const update = (mm: [number, number, number], ijk: [number, number, number] | null, hemi: string): void => {
+      put(xIn, mm[0].toFixed(2))
+      put(yIn, mm[1].toFixed(2))
+      put(zIn, mm[2].toFixed(2))
+      put(iIn, ijk ? String(ijk[0]) : '')
+      put(jIn, ijk ? String(ijk[1]) : '')
+      put(kIn, ijk ? String(ijk[2]) : '')
+      hemiEl.textContent = hemi
+    }
+    return { el, update }
+  })()
+  // Mount the editable editor into the Coordinates subpanel (built into the info panel above).
+  {
+    const coordHost = document.getElementById('report-coordinates')
+    if (coordHost) {
+      coordHost.classList.remove('muted')
+      coordHost.replaceChildren(coordEditor.el)
+    }
+  }
+
   // Effective pane visibility (Req: hide vol/surf pane when unchecked). Never hide both: if both
   // boxes are off, keep the pane whose box was unchecked most recently (user's choice).
   let lastUnchecked: 'vol' | 'surf' = 'vol'
@@ -371,10 +537,16 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
   const morphSymmetric: Record<MorphologyMetric, boolean> = { curvature: true, sulc: true, thickness: false }
   // Per-metric colormap override for the continuous morphology layers (binary curvature is fixed).
   const morphColormaps: Partial<Record<MorphologyMetric, string>> = { curvature: 'gray', sulc: 'blue2red', thickness: 'viridis' }
-  let morphTransparentBelowMin = false
+  // Per-metric two-sided clip (as in function): vertices outside [lo, hi] render transparent. Default
+  // open (full domain).
+  const morphClip: Record<MorphologyMetric, { lo: number | null; hi: number | null }> = {
+    curvature: { lo: null, hi: null },
+    sulc: { lo: null, hi: null },
+    thickness: { lo: null, hi: null },
+  }
   let markerMode: MarkerMode = 'nearestNode'
   let lastCrosshairMm: [number, number, number] | null = null
-  const morphDisplay = (): MorphologyDisplay => ({ metric: morphMetric, curvatureStyle: morphStyle, ranges: morphRanges, colormaps: morphColormaps, transparentBelowMin: morphTransparentBelowMin })
+  const morphDisplay = (): MorphologyDisplay => ({ metric: morphMetric, curvatureStyle: morphStyle, ranges: morphRanges, colormaps: morphColormaps, clip: morphClip[morphActiveMetric()] })
 
   const placeMarker = (): void => {
     if (!view) return
@@ -857,7 +1029,7 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
       const metric = morphActiveMetric()
       const key = morphColormaps[metric] ?? 'gray'
       colorDisplay.setTarget({
-        title: `Morphology · ${metric}`,
+        title: `morphology · ${metric}`,
         colormap: key,
         legendShape: 'bar',
         gradient: colormapGradients[key] ?? FALLBACK_GRADIENT,
@@ -865,14 +1037,15 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
         displayDomain: MORPH_DOMAIN[metric],
         displayRange: morphRanges[metric],
         displaySymmetric: morphSymmetric[metric],
-        clip: 'toggle',
-        hideBelowMin: morphTransparentBelowMin,
+        clip: 'range',
+        clipDomain: MORPH_DOMAIN[metric],
+        clipValue: morphClip[metric],
       })
     } else if (target === 'atlas' && lastAtlasSel) {
       // Atlas is categorical by default; the picker can force a continuous colormap onto the volume.
       const key = atlasColormap ?? LABELS_KEY
       colorDisplay.setTarget({
-        title: `Atlas · ${lastAtlasSel.atlas}${lastAtlasSel.level ? lastAtlasSel.level : ''}`,
+        title: `atlas · ${lastAtlasSel.atlas}${lastAtlasSel.level ? lastAtlasSel.level : ''}`,
         colormap: key,
         legendShape: 'bar',
         gradient: colormapGradients[key] ?? FALLBACK_GRADIENT,
@@ -941,16 +1114,14 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
       }
     },
     onClipRange: (lo: number | null, hi: number | null): void => {
-      if (colorTarget() === 'function') {
+      const t = colorTarget()
+      if (t === 'function') {
         funcClipLo = lo
         funcClipHi = hi
         applyFunctionNow()
         void applyFunctionSurface() // clip hides the same vertices on the surface
-      }
-    },
-    onHideBelowMin: (on: boolean): void => {
-      if (colorTarget() === 'morphology') {
-        morphTransparentBelowMin = on
+      } else if (t === 'morphology') {
+        morphClip[morphActiveMetric()] = { lo, hi }
         view?.applyMorphologyDisplay(morphDisplay())
         refreshColorDisplay()
       }
@@ -970,7 +1141,7 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
         morphColormaps[m] = MORPH_DEFAULT_COLORMAP[m]
         morphRanges[m] = { ...MORPH_DEFAULT_RANGE[m] }
         morphSymmetric[m] = MORPH_DEFAULT_SYMMETRIC[m]
-        morphTransparentBelowMin = false
+        morphClip[m] = { lo: null, hi: null }
         view?.applyMorphologyDisplay(morphDisplay())
         refreshColorDisplay()
       } else if (t === 'atlas') {
@@ -1051,9 +1222,9 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
   }
 
   // --- category tabs: an exclusive selector that docks one picker at the top of the side panel ---
-  const atlasBtn = panelBtns[PANEL_BUTTONS.indexOf('Atlases')]
-  const morphBtn = panelBtns[PANEL_BUTTONS.indexOf('Morphology')]
-  const functionBtn = panelBtns[PANEL_BUTTONS.indexOf('Function')]
+  const atlasBtn = panelBtns[PANEL_BUTTONS.indexOf('atlas')]
+  const morphBtn = panelBtns[PANEL_BUTTONS.indexOf('morphology')]
+  const functionBtn = panelBtns[PANEL_BUTTONS.indexOf('function')]
 
   // Reflect the docked tab in the button highlight, the docked picker, and the content slot.
   const updateTabUI = (): void => {
@@ -1098,7 +1269,7 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
   morphBtn.addEventListener('click', () => selectTab('morphology'))
   functionBtn.addEventListener('click', () => selectTab('function'))
 
-  // Anatomy report: all ARM levels + D99 at the crosshair (sampled from report-only volumes).
+  // Atlas report: all ARM levels + D99 at the crosshair (sampled from report-only volumes).
   let reportSpecs: Array<{ key: string; label: string; byId: Map<number, AtlasLabel> }> = []
 
   const updateAnatomyReport = (): void => {
@@ -1187,8 +1358,10 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
         colorDisplay = createColorDisplay(colorDisplayCallbacks, colormapGradients, colormapInfos)
         colorDock.append(colorDisplay.element)
         marker = new Marker(view.render)
+        // Orientation gizmo (R/L·A/P·S/I) is a permanent surface-pane widget, always shown.
         gizmo = new OrientationGizmo(surfacePane, view.render)
         gizmo.start()
+        syncMarkerControls()
         view.onCrosshair((info) => {
           lastMm = info.mm
           lastCrosshairMm = info.mm
@@ -1198,24 +1371,9 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
             currentNode = node
             placeMarker()
           }
-          const el = document.getElementById('report-coordinates')
-          if (el) {
-            const [x, y, z] = info.mm
-            const ijk = view!.baseVox(info.mm)
-            const hemiNode = node ?? currentNode
-            el.innerHTML = ''
-            el.append(
-              dlRows([
-                ['X (mm)', x.toFixed(2)],
-                ['Y (mm)', y.toFixed(2)],
-                ['Z (mm)', z.toFixed(2)],
-                ['I', ijk ? String(ijk[0]) : '—'],
-                ['J', ijk ? String(ijk[1]) : '—'],
-                ['K', ijk ? String(ijk[2]) : '—'],
-                ['hemisphere', hemiNode ? (hemiNode.hemi === 0 ? 'left' : 'right') : '—'],
-              ]),
-            )
-          }
+          const ijk = view!.baseVox(info.mm)
+          const hemiNode = node ?? currentNode
+          coordEditor.update(info.mm, ijk, hemiNode ? (hemiNode.hemi === 0 ? 'left' : 'right') : '—')
           updateAnatomyReport()
           updateFunctionReport()
           updateVisualField()
@@ -1280,7 +1438,9 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
       morphMetric = 'curvature'
       morphStyle = 'binary'
       markerMode = 'nearestNode'
-      morphTransparentBelowMin = false
+      morphClip.curvature = { lo: null, hi: null }
+      morphClip.sulc = { lo: null, hi: null }
+      morphClip.thickness = { lo: null, hi: null }
       morphColormaps.curvature = 'gray'
       morphColormaps.sulc = 'blue2red'
       morphColormaps.thickness = 'viridis'
@@ -1297,10 +1457,6 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
           morphStyle = s
           view?.applyMorphologyDisplay(morphDisplay())
           refreshColorDisplay()
-        },
-        onMarkerMode: (mode) => {
-          markerMode = mode
-          placeMarker()
         },
       })
       sidePicker.append(morphPanel.element)

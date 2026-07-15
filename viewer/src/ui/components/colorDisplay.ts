@@ -80,7 +80,7 @@ export function createColorDisplay(
   })
   const clipToggleField = h('div', { class: 'field' }, [h('span', {}, ['Clip']), h('div', { class: 'chip-row' }, [hideChip])])
 
-  const displayField = h('div', { class: 'field' }, [h('span', {}, ['Display range']), displayRange.element])
+  const displayField = h('div', { class: 'field' }, [h('span', {}, ['Display']), displayRange.element])
   const clipRangeField = h('div', { class: 'field' }, [h('span', {}, ['Clip']), clipRange.element])
 
   const body = h('div', { class: 'color-display-body' }, [

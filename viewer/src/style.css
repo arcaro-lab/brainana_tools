@@ -97,14 +97,29 @@ body {
 /* 2-row × 4-column grid; children are appended column-major (grid-auto-flow: column). */
 .toolbar {
   display: grid; grid-template-rows: auto auto; grid-auto-flow: column;
-  justify-content: start; align-items: center; column-gap: var(--sp-7); row-gap: var(--sp-2);
-  padding: 9px var(--sp-6); border-bottom: 1px solid var(--border);
+  justify-content: start; align-items: center; column-gap: var(--sp-6); row-gap: 2px;
+  padding: 3px var(--sp-6); border-bottom: 1px solid var(--border);
   background: linear-gradient(var(--elev), var(--panel)); flex: 0 0 auto;
 }
 .tb-cell { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; flex-wrap: wrap; }
+/* Compact controls inside the toolbar so each of the two rows stays short (side panels unaffected). */
+.toolbar select,
+.toolbar input[type="text"],
+.toolbar input[type="number"] { padding: 1px var(--sp-2); font-size: var(--fs-1); }
+.toolbar .primary,
+.toolbar .ghost,
+.toolbar .panel-btn { padding: 2px 10px; }
+.toolbar .view-btn { padding: 1px 8px; }
+.toolbar .layout-btn { padding: 1px 0; }
+.toolbar input[type="checkbox"] { width: 13px; height: 13px; }
+.toolbar .slider-field { margin-bottom: 0; }
+.toolbar .slider-row input[type="range"] { height: 13px; }
+.toolbar .slider-num { padding: 0 3px; }
 /* Full-height hairline separating the toolbar into logical clusters (mirrors the info-panel seams).
    Spans both grid rows so it reads as one vertical rule between column groups. */
 .tb-divide { grid-row: 1 / 3; align-self: stretch; width: 1px; background: var(--border); margin: -3px 0; }
+/* A toolbar cell that spans both rows (e.g. the montage layouts, centred right of vol/surf). */
+.tb-span { grid-row: 1 / 3; align-self: center; }
 .views { display: flex; gap: var(--sp-1); flex-wrap: wrap; }
 .view-btn { background: var(--panel-2); border: 1px solid var(--border); color: var(--text); padding: var(--sp-1) 9px; border-radius: var(--r-sm); cursor: pointer; font-size: var(--fs-1); transition: border-color var(--dur) var(--ease), color var(--dur) var(--ease), background var(--dur) var(--ease); }
 .view-btn:hover { border-color: var(--accent); color: var(--accent-2); }
@@ -123,7 +138,7 @@ select.narrow { width: 96px; }
 .layout-btn.active { color: var(--accent-2); border-color: var(--accent); background: var(--accent-tint); }
 /* Toolbar category tabs: a segmented bar; the active tab carries an amber underline. */
 .panels { display: flex; gap: var(--sp-1); flex-wrap: wrap; }
-.panel-btn { position: relative; background: var(--panel-2); border: 1px solid var(--border); color: var(--text); padding: var(--sp-2) 11px; border-radius: var(--r-md); cursor: pointer; transition: border-color var(--dur) var(--ease), color var(--dur) var(--ease), background var(--dur) var(--ease); }
+.panel-btn { position: relative; background: var(--panel-2); border: 1px solid var(--border); color: var(--text); padding: var(--sp-2) 11px; border-radius: var(--r-md); cursor: pointer; text-transform: uppercase; letter-spacing: .06em; font-size: 12px; font-weight: 600; transition: border-color var(--dur) var(--ease), color var(--dur) var(--ease), background var(--dur) var(--ease); }
 .panel-btn:hover:not(:disabled):not(.active) { border-color: var(--border-2); color: var(--accent-2); }
 .panel-btn.active { border-color: var(--accent); color: var(--accent-2); background: var(--accent-tint); }
 .panel-btn.active::after {
@@ -263,17 +278,23 @@ input[type="range"]:focus { outline: none; }
 .chip:hover:not(.active) { border-color: var(--border-2); color: var(--accent-2); }
 /* One selection language everywhere: tinted fill + accent border + accent-2 text. */
 .chip.active { border-color: var(--accent); background: var(--accent-tint); color: var(--accent-2); }
-/* One column per subsection; Anatomy widest, Function widened so labels never truncate. */
+/* One column per subsection; Atlas widest, Function widened so labels never truncate. */
+/* Column 1..4 widths are draggable (--info-cN, set by the seam handles); the last column flexes. */
 .info-panel {
   grid-column: 1 / -1; grid-row: 2; background: var(--panel);
+  position: relative;
   display: grid; min-height: 0;
   grid-template-columns:
-    minmax(150px, .68fr)   /* Coordinates */
-    minmax(285px, 1.7fr)   /* Anatomy     */
-    minmax(180px, .88fr)   /* Surface     */
-    minmax(200px, 1fr)     /* Function    */
-    minmax(185px, .86fr);  /* Visual field */
+    var(--info-c1, 180px)   /* Coordinates */
+    var(--info-c2, 340px)   /* Atlas       */
+    var(--info-c3, 210px)   /* Surface     */
+    var(--info-c4, 235px)   /* Function    */
+    minmax(150px, 1fr);     /* Visual field */
 }
+/* Draggable seam handles floating over the column borders. */
+.info-vresizer { position: absolute; top: 0; bottom: 0; width: 9px; transform: translateX(-50%); z-index: 30; cursor: col-resize; touch-action: none; }
+.info-vresizer::after { content: ''; position: absolute; top: 0; bottom: 0; left: 50%; width: 2px; transform: translateX(-50%); background: transparent; }
+.info-vresizer:hover::after, .info-vresizer:active::after { background: var(--accent); }
 .info-col { background: var(--panel); padding: 12px 16px; overflow: auto; min-width: 0; border-right: 1px solid var(--border); }
 .info-col:last-child { border-right: 0; }
 .info-col h3 { margin: 0 0 10px; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; line-height: 1.2; color: var(--muted); white-space: nowrap; }
@@ -285,7 +306,7 @@ input[type="range"]:focus { outline: none; }
 /* 4-column paired variant: dt dd dt dd per row; single-pair rows span the last 3 cols. */
 .info-col dl.dl-paired { grid-template-columns: max-content minmax(0,1fr) max-content minmax(0,1fr); }
 .info-col dl.dl-paired .dl-span { grid-column: span 3; }
-/* Anatomy rows: atlas name · id · region label (gold), zebra-striped. */
+/* Atlas rows: atlas name · id · region label (gold), zebra-striped. */
 .atlas-report-row {
   display: grid; grid-template-columns: 82px 46px minmax(120px, 1fr); align-items: baseline; gap: 8px;
   padding: 2px 4px; border-radius: 3px; font-size: 11px;
@@ -471,9 +492,39 @@ input[type="range"]:focus { outline: none; }
 .range-control.is-disabled { opacity: 0.45; pointer-events: none; }
 .range-pair { display: flex; gap: var(--sp-4); }
 .range-side { flex: 1 1 0; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.range-cap { font-size: var(--fs-sm); color: var(--muted); display: flex; gap: var(--sp-1); }
-.range-num { color: var(--text); font-size: var(--fs-sm); }
+.range-cap { font-size: var(--fs-sm); color: var(--muted); display: flex; align-items: center; gap: var(--sp-1); }
+/* Editable numeric read-out for the dual range control (compact override of the generic number input). */
+.range-num { color: var(--text); font-size: var(--fs-sm); width: 56px; padding: 1px 4px; text-align: right; }
 .range-actions { margin-bottom: 0; margin-top: 2px; }
+
+/* ---------- single slider with editable number box (label · slider · value on one row) ---------- */
+.slider-field { flex-direction: row; align-items: center; gap: var(--sp-3); }
+.slider-field > .slider-label { flex: 0 0 auto; white-space: nowrap; }
+.slider-row { flex: 1 1 auto; display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.slider-row input[type="range"] { flex: 1 1 auto; min-width: 40px; }
+.slider-num { flex: 0 0 auto; width: 56px; padding: 1px 4px; font-size: var(--fs-sm); text-align: right; }
+.slider-field.is-disabled { opacity: 0.5; }
+
+/* ---------- labelled select field (label · dropdown on one row) ---------- */
+.select-field > span { flex: 0 0 auto; }
+.select-field select { flex: 1 1 auto; min-width: 0; }
+
+/* ---------- editable crosshair coordinates (compact, matching the Atlas rows) ---------- */
+.info-col dl.coord-dl { gap: 0 10px; align-items: center; font-size: 11px; line-height: 1.25; }
+.info-col dl.coord-dl dt, .info-col dl.coord-dl dd { padding: 1px 0; }
+/* Borderless read-out that reads like the Anatomy values; the box only shows on hover/focus. */
+.coord-num {
+  width: 66px; padding: 0 3px; height: 17px; font-size: 11px; line-height: 1;
+  background: transparent; border-color: transparent;
+}
+.coord-num:hover { border-color: var(--border); }
+.coord-num:focus { background: var(--panel-2); border-color: var(--accent); }
+
+/* Toolbar variants: keep the marker size slider + mode select from collapsing/over-growing. */
+.tb-cell .slider-field { margin-bottom: 0; gap: var(--sp-2); }
+.tb-cell .slider-row { width: 108px; flex: 0 0 auto; }
+.tb-cell .select-field { margin-bottom: 0; }
+.tb-cell .select-field select { flex: 0 0 auto; width: 118px; }
 
 /* ---------- unified "Color display" section (docked at side-panel bottom) ---------- */
 /* Capped + internally scrollable so it never pushes the ROI legend off-screen or past the cell. */

@@ -43,8 +43,9 @@ export function createRangeControl(opts: RangeControlOptions): RangeControl {
 
   const minInput = h('input', { type: 'range' }) as HTMLInputElement
   const maxInput = h('input', { type: 'range' }) as HTMLInputElement
-  const minVal = h('span', { class: 'range-num muted' }, ['—'])
-  const maxVal = h('span', { class: 'range-num muted' }, ['—'])
+  // Editable numeric read-outs: the value can be typed as well as dragged (kept in sync with the slider).
+  const minVal = h('input', { type: 'number', class: 'range-num' }) as HTMLInputElement
+  const maxVal = h('input', { type: 'number', class: 'range-num' }) as HTMLInputElement
 
   let domainMin = 0
   let domainMax = 1
@@ -83,12 +84,26 @@ export function createRangeControl(opts: RangeControlOptions): RangeControl {
       minInput.value = String(lo)
       maxInput.value = String(hi)
     }
-    minVal.textContent = fmt(lo)
-    maxVal.textContent = fmt(hi)
+    minVal.value = fmt(lo)
+    maxVal.value = fmt(hi)
     opts.onChange({ min: lo, max: hi })
   }
   minInput.addEventListener('input', () => commit('min'))
   maxInput.addEventListener('input', () => commit('max'))
+
+  // Typing into a numeric box: clamp to the slider bounds, push into the paired range input, commit.
+  const editBox = (box: HTMLInputElement, slider: HTMLInputElement, source: 'min' | 'max'): void => {
+    if (box.value.trim() === '' || Number.isNaN(Number(box.value))) {
+      box.value = fmt(Number(slider.value))
+      return
+    }
+    const lo = Number(slider.min)
+    const hi = Number(slider.max)
+    slider.value = String(Math.max(lo, Math.min(hi, Number(box.value))))
+    commit(source)
+  }
+  minVal.addEventListener('change', () => editBox(minVal, minInput, 'min'))
+  maxVal.addEventListener('change', () => editBox(maxVal, maxInput, 'max'))
 
   const actions: Array<Node> = []
   let symChip: HTMLButtonElement | null = null
@@ -124,8 +139,8 @@ export function createRangeControl(opts: RangeControlOptions): RangeControl {
     setValue: (min, max) => {
       minInput.value = String(min)
       maxInput.value = String(max)
-      minVal.textContent = fmt(min)
-      maxVal.textContent = fmt(max)
+      minVal.value = fmt(min)
+      maxVal.value = fmt(max)
     },
     value: () => ({ min: Number(minInput.value), max: Number(maxInput.value) }),
     setSymmetric: (on) => {

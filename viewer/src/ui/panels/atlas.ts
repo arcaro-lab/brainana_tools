@@ -1,7 +1,8 @@
-// Docked "Atlases" picker (top of the side panel): pick an ARM level (1-6) or D99, adjust overlay
-// opacity, or clear.
+// Docked "atlas" picker (top of the side panel): pick an ARM level (1-6) or D99 from a dropdown,
+// adjust overlay opacity, or clear.
 import type { Manifest } from '../../types.ts'
-import { h } from '../dom.ts'
+import { h, selectField, type SelectOption } from '../dom.ts'
+import { createSlider } from '../components/slider.ts'
 
 export interface AtlasSelection {
   atlas: 'ARM' | 'D99'
@@ -20,37 +21,29 @@ export interface AtlasPanel {
   setActive: (sel: AtlasSelection | null) => void
 }
 
+const key = (sel: AtlasSelection | null): string => (sel ? `${sel.atlas}${sel.level}` : 'none')
+
+// Parse an option value back into a selection ('none' → null, 'ARM3' → level 3, 'D990' → D99).
+function parseKey(value: string): AtlasSelection | null {
+  if (value === 'none') return null
+  if (value.startsWith('ARM')) return { atlas: 'ARM', level: Number(value.slice(3)) }
+  return { atlas: 'D99', level: 0 }
+}
+
 export function createAtlasPanel(manifest: Manifest, cb: AtlasPanelCallbacks): AtlasPanel {
-  const buttons = new Map<string, HTMLButtonElement>()
-  const key = (sel: AtlasSelection | null) => (sel ? `${sel.atlas}${sel.level}` : 'none')
-
-  const row = h('div', { class: 'chip-row' })
-  const noneBtn = h('button', { type: 'button', class: 'chip' }, ['None']) as HTMLButtonElement
-  noneBtn.addEventListener('click', () => cb.onSelect(null))
-  buttons.set('none', noneBtn)
-  row.append(noneBtn)
-
+  const options: SelectOption[] = [{ value: 'none', label: 'None' }]
   for (let i = 1; i <= 6; i++) {
-    if (!manifest.atlases?.charm?.[String(i)]) continue
-    const b = h('button', { type: 'button', class: 'chip' }, [`ARM${i}`]) as HTMLButtonElement
-    b.addEventListener('click', () => cb.onSelect({ atlas: 'ARM', level: i }))
-    buttons.set(`ARM${i}`, b)
-    row.append(b)
+    if (manifest.atlases?.charm?.[String(i)]) options.push({ value: `ARM${i}`, label: `ARM${i}` })
   }
-  if (manifest.atlases?.d99) {
-    const b = h('button', { type: 'button', class: 'chip' }, ['D99']) as HTMLButtonElement
-    b.addEventListener('click', () => cb.onSelect({ atlas: 'D99', level: 0 }))
-    buttons.set('D990', b)
-    row.append(b)
-  }
+  if (manifest.atlases?.d99) options.push({ value: 'D990', label: 'D99' })
 
-  const opacity = h('input', { type: 'range', min: '0', max: '1', step: '0.05', value: '0.7' }) as HTMLInputElement
-  opacity.addEventListener('input', () => cb.onOpacity(Number(opacity.value)))
+  const picker = selectField('Atlas', options, (value) => cb.onSelect(parseKey(value)))
+  const opacity = createSlider({ label: 'Overlay opacity', min: 0, max: 1, step: 0.05, value: 0.7, onInput: (v) => cb.onOpacity(v) })
 
   const element = h('div', { class: 'side-panel', hidden: true }, [
-    h('div', { class: 'side-panel-head' }, ['Atlases']),
-    row,
-    h('label', { class: 'field' }, [h('span', {}, ['Overlay opacity']), opacity]),
+    h('div', { class: 'side-panel-head' }, ['atlas']),
+    picker.element,
+    opacity.element,
   ])
 
   return {
@@ -61,9 +54,6 @@ export function createAtlasPanel(manifest: Manifest, cb: AtlasPanelCallbacks): A
     hide: () => {
       element.hidden = true
     },
-    setActive: (sel) => {
-      const activeKey = key(sel)
-      for (const [k, b] of buttons) b.classList.toggle('active', k === activeKey)
-    },
+    setActive: (sel) => picker.setValue(key(sel)),
   }
 }

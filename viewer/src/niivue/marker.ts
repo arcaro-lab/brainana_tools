@@ -10,12 +10,10 @@ const MARKER_RGBA = new Uint8Array([255, 196, 0, 255]) // amber, matches v1.2.25
 // A small pin, slightly elongated along the surface normal so it reads as a marker.
 const R_RADIAL = 0.55 // half-width across the surface
 const R_HEIGHT = 0.9 // half-length along the surface normal
-// How far the centre is pushed out along the normal. Kept small so the marker sits essentially
-// ON the picked vertex — a large lift makes the marker project away from the cursor while
-// dragging (the drag-offset bug). Just enough that it isn't fully buried.
-const LIFT = 0.3
 
-function uvSphere(stacks: number, slices: number): { pts: Float32Array; tris: Uint32Array } {
+function uvSphere(stacks: number, slices: number, scale = 1): { pts: Float32Array; tris: Uint32Array } {
+  const rRadial = R_RADIAL * scale
+  const rHeight = R_HEIGHT * scale
   const pts: number[] = []
   const tris: number[] = []
   for (let i = 0; i <= stacks; i++) {
@@ -23,7 +21,7 @@ function uvSphere(stacks: number, slices: number): { pts: Float32Array; tris: Ui
     for (let j = 0; j <= slices; j++) {
       const theta = (2 * Math.PI * j) / slices
       // Unit ellipsoid scaled thin on x/z and tall on y (the local elongation axis).
-      pts.push(R_RADIAL * Math.sin(phi) * Math.cos(theta), R_HEIGHT * Math.cos(phi), R_RADIAL * Math.sin(phi) * Math.sin(theta))
+      pts.push(rRadial * Math.sin(phi) * Math.cos(theta), rHeight * Math.cos(phi), rRadial * Math.sin(phi) * Math.sin(theta))
     }
   }
   for (let i = 0; i < stacks; i++) {
@@ -58,11 +56,19 @@ function alignYToNormal(p: [number, number, number], n: [number, number, number]
 
 export class Marker {
   #nv: Niivue
-  #base = uvSphere(10, 14)
+  #scale = 1
+  #base = uvSphere(10, 14, 1)
   #visible = true
 
   constructor(nv: Niivue) {
     this.#nv = nv
+  }
+
+  // Resize the pin (multiplier on its base dimensions). Rebuilds the base geometry; the caller
+  // re-places the marker (via setWorld) to redraw at the new size.
+  setSize(scale: number): void {
+    this.#scale = Math.max(0.2, Math.min(5, scale))
+    this.#base = uvSphere(10, 14, this.#scale)
   }
 
   #existing(): NVMesh | undefined {
@@ -93,10 +99,13 @@ export class Marker {
       return
     }
     const n = normalize(normal ?? [0, 1, 0])
-    // Small outward lift so the pin sits on the surface without projecting away from the cursor.
-    const cx = xyz[0] + n[0] * LIFT
-    const cy = xyz[1] + n[1] * LIFT
-    const cz = xyz[2] + n[2] * LIFT
+    // Lift the CENTRE out by the pin's (scaled) half-height so its base rests at the picked vertex
+    // and the whole body sits ON the surface — otherwise, especially at larger sizes/zoom, most of
+    // the ellipsoid is buried and only its emerging rim shows (the "crescent" bug).
+    const lift = R_HEIGHT * this.#scale
+    const cx = xyz[0] + n[0] * lift
+    const cy = xyz[1] + n[1] * lift
+    const cz = xyz[2] + n[2] * lift
     const src = this.#base.pts
     const pts = new Float32Array(src.length)
     for (let i = 0; i < src.length; i += 3) {

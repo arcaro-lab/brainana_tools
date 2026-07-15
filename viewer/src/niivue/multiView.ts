@@ -48,8 +48,9 @@ export interface MorphologyDisplay {
   ranges: Record<MorphologyMetric, { min: number; max: number }>
   /** Optional per-metric colormap override (binary curvature keeps its dedicated LUT). */
   colormaps?: Partial<Record<MorphologyMetric, string>>
-  /** Value-clip on the surface: render samples below cal_min transparent instead of clamped. */
-  transparentBelowMin?: boolean
+  /** Two-sided value clip on the surface (as in function): vertices outside [lo, hi] render
+   * transparent (masked to NaN), independent of the display colour range. null = open on that side. */
+  clip?: { lo: number | null; hi: number | null }
 }
 
 export interface CrosshairInfo {
@@ -125,6 +126,24 @@ export class MultiView {
 
   onCrosshair(cb: (info: CrosshairInfo) => void): void {
     this.#crosshairCb = cb
+  }
+
+  // Show/hide the VOLUME crosshair only (zero its line width — alpha alone isn't honoured). The
+  // surface render never shows a 3D crosshair. (Marker pin visibility is handled by the dashboard.)
+  #crosshairWidth = 1
+  setCrosshairVisible(on: boolean): void {
+    const nv = this.slices as unknown as { setCrosshairWidth?: (w: number) => void; opts: { crosshairWidth: number } }
+    if (on && this.#crosshairWidth <= 0) this.#crosshairWidth = 1
+    else if (!on) this.#crosshairWidth = nv.opts.crosshairWidth || this.#crosshairWidth
+    if (nv.setCrosshairWidth) nv.setCrosshairWidth(on ? this.#crosshairWidth : 0)
+    else nv.opts.crosshairWidth = on ? this.#crosshairWidth : 0
+    this.slices.drawScene()
+  }
+
+  // Show/hide the anatomical orientation letters (R/L·A/P·S/I) on the VOLUME slice montage.
+  setSliceOrientationVisible(on: boolean): void {
+    this.slices.opts.isOrientationTextVisible = on
+    this.slices.drawScene()
   }
 
   // Load (or switch) the base volume. The volume lives ONLY in the slices instance — the
@@ -296,6 +315,18 @@ export class MultiView {
     }
   }
 
+  // Inverse of baseVox: base-volume voxel index i,j,k → world-mm point, or null (for editing IJK).
+  voxToWorld(ijk: [number, number, number]): [number, number, number] | null {
+    const vol = this.#baseVol as unknown as { matRAS?: unknown; vox2mm?: (xyz: number[], mtx: unknown) => { [k: number]: number } }
+    if (!vol?.matRAS || !vol.vox2mm) return null
+    try {
+      const mm = vol.vox2mm([ijk[0], ijk[1], ijk[2]], vol.matRAS)
+      return [mm[0], mm[1], mm[2]]
+    } catch {
+      return null
+    }
+  }
+
   // Value of a functional frame at a voxel (unmasked sampler). NaN if unavailable.
   sampleFunctionFrame(vox: [number, number, number], frame: number): number {
     if (!this.#funcSampler) return NaN
@@ -311,7 +342,7 @@ export class MultiView {
     return d ? [d[1], d[2], d[3]] : null
   }
 
-  // Sampling-only atlas volumes for the multi-level Anatomy report (loaded but NOT displayed).
+  // Sampling-only atlas volumes for the multi-level Atlas report (loaded but NOT displayed).
   #reportVols = new Map<string, NVImage>()
 
   async loadReportVolume(key: string, url: string): Promise<void> {
@@ -338,7 +369,7 @@ export class MultiView {
     return vol ? this.#sampleVolume(vol) : null
   }
 
-  // Label id of the atlas overlay at the current crosshair (for the Anatomy report).
+  // Label id of the atlas overlay at the current crosshair (for the Atlas report).
   atlasLabelAtCrosshair(): number | null {
     if (!this.#atlasVol) return null
     try {
@@ -457,8 +488,7 @@ export class MultiView {
     const layersFor = (hemi: 'left' | 'right'): Record<string, unknown>[] => {
       const arr: Record<string, unknown>[] = specs.map((s) => {
         const cal = this.#morphLayerCal(s.key, s.metric)
-        const clip = !!display?.transparentBelowMin && s.key !== 'curvatureBinary'
-        return { ...NVMeshLayerDefaults, url: u(s.pair[hemi]), colormap: s.colormap, opacity: this.#morphLayerVisible(s.key) ? 1 : 0, cal_min: cal.min, cal_max: cal.max, isTransparentBelowCalMin: clip, colorbarVisible: false, showLegend: false }
+        return { ...NVMeshLayerDefaults, url: u(s.pair[hemi]), colormap: s.colormap, opacity: this.#morphLayerVisible(s.key) ? 1 : 0, cal_min: cal.min, cal_max: cal.max, isTransparentBelowCalMin: false, colorbarVisible: false, showLegend: false }
       })
       if (overlay) arr.push({ ...NVMeshLayerDefaults, url: u(overlay[hemi]), colormapLabel: overlay.table, opacity: 1, showLegend: false })
       return arr
@@ -470,6 +500,9 @@ export class MultiView {
     ])
     // Identify the two just-loaded hemisphere meshes (exclude the marker).
     this.#displayMeshes = (this.render.meshes as NVMesh[]).filter((m) => m.name !== 'selected-location').slice(-2)
+
+    // Apply the initial clip (value masking) now that per-vertex values are loaded.
+    if (display) this.applyMorphologyDisplay(display)
 
     // Re-apply the label LUT now that layer.global_max is settled (the load descriptor's
     // colormapLabel is processed too early, collapsing all labels to one color).
@@ -487,15 +520,33 @@ export class MultiView {
       if (idx == null) continue
       const cal = this.#morphLayerCal(spec.key, spec.metric)
       const visible = this.#morphLayerVisible(spec.key)
-      const clip = !!display.transparentBelowMin && spec.key !== 'curvatureBinary'
+      const clip = display.clip
+      const clipActive = spec.key !== 'curvatureBinary' && !!clip && (clip.lo != null || clip.hi != null)
+      const lo = clip?.lo ?? -Infinity
+      const hi = clip?.hi ?? Infinity
       for (const mesh of this.#displayMeshes) {
-        const layer = (mesh as unknown as { layers?: Array<Record<string, unknown>> }).layers?.[idx]
+        const layer = (mesh as unknown as { layers?: Array<Record<string, unknown> & { __origValues?: Float32Array }> }).layers?.[idx]
         if (!layer) continue
         layer.opacity = visible ? 1 : 0
         layer.cal_min = cal.min
         layer.cal_max = cal.max
         layer.colormap = spec.colormap
-        layer.isTransparentBelowCalMin = clip
+        layer.isTransparentBelowCalMin = false
+        // Two-sided clip (only for visible continuous layers): mask out-of-[lo,hi] vertices to NaN,
+        // which the mesh colouring loop renders transparent — decoupled from the display cal range.
+        if (visible) {
+          const orig = (layer.__origValues ??= Float32Array.from(layer.values as ArrayLike<number>))
+          if (clipActive) {
+            const masked = Float32Array.from(orig)
+            for (let i = 0; i < masked.length; i++) {
+              const v = orig[i]
+              if (v < lo || v > hi) masked[i] = NaN
+            }
+            layer.values = masked
+          } else if (layer.__origValues) {
+            layer.values = Float32Array.from(orig)
+          }
+        }
         ;(mesh as unknown as { updateMesh?: (gl: WebGL2RenderingContext) => void }).updateMesh?.(gl)
       }
     }
