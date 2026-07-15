@@ -38,7 +38,7 @@ export function mountSourcesDialog(deps: Deps, onChanged: () => void): void {
   const localPath = h('input', { type: 'text', placeholder: '/path/to/preprocessed', class: 'grow' }) as HTMLInputElement
   const localRecent = recents.find((r) => r.type === 'local')
   if (localRecent) localPath.value = localRecent.path
-  const localBtn = h('button', { type: 'button' }, ['Add local'])
+  const localBtn = h('button', { type: 'button', class: 'primary' }, ['Add local'])
   const localMsg = h('span', { class: 'msg' })
   localBtn.addEventListener('click', async () => {
     if (!localPath.value.trim()) return
@@ -68,7 +68,7 @@ export function mountSourcesDialog(deps: Deps, onChanged: () => void): void {
     rUser.value = remoteRecent.username
     rRoot.value = remoteRecent.remoteRoot
   }
-  const remoteBtn = h('button', { type: 'button' }, ['Add remote'])
+  const remoteBtn = h('button', { type: 'button', class: 'primary' }, ['Add remote'])
   const remoteMsg = h('span', { class: 'msg' })
   remoteBtn.addEventListener('click', async () => {
     if (!rHost.value.trim() || !rUser.value.trim() || !rRoot.value.trim()) return

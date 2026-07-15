@@ -3,6 +3,8 @@
 // yellow marker mode, and the colour range (with an "Auto 2.5–97.5%" button + symmetric-around-zero).
 import { h } from '../dom.ts'
 import type { MorphologyDisplayMetric, MorphologyMetric, CurvatureStyle } from '../../niivue/multiView.ts'
+import { createColormapPicker, type ColormapPicker } from '../components/colormapPicker.ts'
+import { createColorbar, type ColorbarState } from '../components/colorbar.ts'
 
 export type MarkerMode = 'crosshair3d' | 'nearestNode'
 
@@ -13,6 +15,8 @@ export interface MorphologyPanelCallbacks {
   onRange: (min: number, max: number) => void
   onAuto: () => void
   onSymmetric: (on: boolean) => void
+  onColormap: (key: string) => void
+  onTransparentBelowMin: (on: boolean) => void
 }
 
 export interface MorphologyPanel {
@@ -22,11 +26,15 @@ export interface MorphologyPanel {
   // Refresh the range sliders for the active metric. `hidden` blanks the range group (None or
   // binary curvature, which is forced to ±1).
   setRange: (opts: { domainMin: number; domainMax: number; min: number; max: number; metric: MorphologyMetric; hidden: boolean; symmetric: boolean }) => void
+  setColormap: (key: string) => void
+  setColorbar: (state: ColorbarState | null) => void
+  /** Show/hide the colormap + colorbar (continuous metrics only; binary curvature/None hide them). */
+  setColormapVisible: (visible: boolean) => void
 }
 
 const chip = (label: string): HTMLButtonElement => h('button', { type: 'button', class: 'chip' }, [label]) as HTMLButtonElement
 
-export function createMorphologyPanel(cb: MorphologyPanelCallbacks): MorphologyPanel {
+export function createMorphologyPanel(cb: MorphologyPanelCallbacks, gradients: Record<string, string>): MorphologyPanel {
   // Display metric chips.
   const displayChips: Array<[MorphologyDisplayMetric, string]> = [
     ['curvature', 'Curvature'],
@@ -120,17 +128,32 @@ export function createMorphologyPanel(cb: MorphologyPanelCallbacks): MorphologyP
   const autoBtn = chip('Auto 2.5–97.5%')
   autoBtn.addEventListener('click', () => cb.onAuto())
 
+  // "Hide below min" = the surface value-clip (renders samples below cal_min transparent).
+  const clipChip = chip('Hide below min')
+  clipChip.addEventListener('click', () => {
+    const on = !clipChip.classList.contains('active')
+    clipChip.classList.toggle('active', on)
+    cb.onTransparentBelowMin(on)
+  })
+
   const rangeField = h('div', { class: 'field' }, [
     h('span', {}, ['Colour range']),
     h('div', { class: 'row' }, [h('label', { class: 'field' }, [h('span', {}, ['Min ', minVal]), minInput]), h('label', { class: 'field' }, [h('span', {}, ['Max ', maxVal]), maxInput])]),
-    h('div', { class: 'chip-row' }, [autoBtn, symChip]),
+    h('div', { class: 'chip-row' }, [autoBtn, symChip, clipChip]),
   ])
+
+  // Colormap picker + colorbar (continuous metrics only; hidden for binary curvature / None).
+  const colorbar = createColorbar('Colour range')
+  const cmap: ColormapPicker = createColormapPicker({ gradients, value: 'gray', onChange: (key) => cb.onColormap(key) })
+  const cmapField = h('label', { class: 'field' }, [h('span', {}, ['Colormap']), cmap.element])
 
   const element = h('div', { class: 'side-panel', hidden: true }, [
     h('div', { class: 'side-panel-head' }, ['Morphology']),
     h('div', { class: 'field' }, [h('span', {}, ['Display']), displayRow]),
     styleField,
     h('div', { class: 'field' }, [h('span', {}, ['Yellow marker']), markerRow]),
+    colorbar.element,
+    cmapField,
     rangeField,
   ])
 
@@ -158,6 +181,12 @@ export function createMorphologyPanel(cb: MorphologyPanelCallbacks): MorphologyP
       maxInput.value = String(max)
       minVal.textContent = fmt(min, metric)
       maxVal.textContent = fmt(max, metric)
+    },
+    setColormap: (key) => cmap.setValue(key),
+    setColorbar: (state) => (state ? colorbar.set(state) : colorbar.hide()),
+    setColormapVisible: (visible) => {
+      cmapField.hidden = !visible
+      if (!visible) colorbar.hide()
     },
   }
 }

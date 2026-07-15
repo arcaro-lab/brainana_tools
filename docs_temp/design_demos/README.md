@@ -1,60 +1,41 @@
-# Brainana Viewer — UI restyle demos
+# Brainana Viewer — UI direction: Graphite + Amber
 
-Three visual-identity mockups for the Brainana Viewer, all in the **Refined Instrument**
-direction (a deliberate cool-neutral instrument palette, one confident accent, a monospace
-face for every number, crisp hairline seams). Built to compare side-by-side and pick one.
+The viewer's visual identity is **Refined Instrument · Graphite + Amber** — a deliberate warm-neutral
+instrument palette, one confident amber accent (spent only on active/focus), a humanist UI face
+(Source Sans 3) with a monospace face (IBM Plex Mono) for every number, and crisp hairline seams.
 
-These are **throwaway design mockups** — nothing here changes the app. Modeled on the
-existing design-system reference at
-`brainana/docs_temp/update_instruction/design_system/`.
+This was chosen from three explored variations (Slate + Cyan, Graphite + Amber, Deep-space + Signal);
+**Graphite + Amber won and the other two were dropped.** The direction is **shipped** in the real app —
+this folder is kept only as the living reference.
 
-## View them
+## View it
 
 Open in any browser — self-contained, no build step:
 
 ```bash
-# open the compare page (links all three)
 xdg-open index.html        # Linux
 open index.html            # macOS
 ```
 
-- **`index.html`** — compare page with a live mini-preview of each variant.
-- **`refined-a-slate-cyan.html`** — Variant A · Slate + Cyan
-- **`refined-b-graphite-amber.html`** — Variant B · Graphite + Amber
-- **`refined-c-deepspace-signal.html`** — Variant C · Deep-space + Signal
+- **`index.html`** — one-page summary of the chosen identity, linking the reference.
+- **`refined-b-graphite-amber.html`** — the reference: an **identity board** (color tokens, type
+  specimen, component recipes) plus an **applied dashboard** at true density, with a CSS/Canvas
+  placeholder standing in for the live NiiVue brain render.
 
-Each page has two parts: an **identity board** (color tokens, type specimen, component
-recipes) and an **applied dashboard** — the real single-screen viewer layout at true
-density, with a CSS/Canvas placeholder standing in for the live NiiVue brain render.
+Fonts load from Google Fonts over the network; offline, each falls back to a tuned system stack.
 
-Fonts load from Google Fonts over the network (like the reference stylesheet); offline,
-each falls back to a tuned system stack.
+## Where it lives in the app
 
-## The three variations
+The identity is fully ported and has since grown into a proper design system:
 
-| Variant | Neutral ground | Accent | Type | Feel |
-|---|---|---|---|---|
-| **A · Slate + Cyan** | cool blue-slate, balanced | refined cyan | Archivo + JetBrains Mono | precise, calm — the elevated "reference" |
-| **B · Graphite + Amber** | warm graphite, softer, gentle elevation | amber/gold | Source Sans 3 + IBM Plex Mono | warm lab instrument, easy for long sessions |
-| **C · Deep-space + Signal** | near-black, high contrast, thin chrome | electric green | IBM Plex Sans + JetBrains Mono (mono-forward) | mission-console read-out, maximum focus |
+- `viewer/src/style.css` — the `:root` token block now carries a full **spacing / radius / type /
+  semantic-color / motion** scale (not just raw palette values), plus crafted range sliders, one unified
+  "active/selected" language across every button and chip, and styled recipes for the colormap picker,
+  range control, and colorbar.
+- `viewer/src/ui/visualFieldPlot.ts` — the retinotopy plot's canvas colors and font read the same theme
+  tokens (no hardcoded literals).
 
-All three share the throughline: neutrals biased slightly toward the accent (never flat
-grey), the accent spent only on active/focus, every coordinate/id/threshold in monospace
-with `tabular-nums`, and semantic colors (region gold, error red, local-green /
-remote-amber source badges) kept separate from the accent.
-
-## After you pick one
-
-Porting into the real viewer (`../../brainana_viewer/`) is a stylesheet-level swap — the
-DOM and class names in these demos already mirror the app:
-
-1. Replace the token block + component rules in
-   `brainana_viewer/viewer/src/style.css` with the chosen variant's `:root` tokens and
-   recipes.
-2. Move the hardcoded canvas mark colors in
-   `brainana_viewer/viewer/src/ui/visualFieldPlot.ts` to match the new accent.
-3. If keeping the linked font, embed it (or add it to the build) rather than relying on a
-   CDN at runtime.
-
-No changes to `dashboard.ts`, `roiLegend.ts`, or the panel modules are required — they
-build the same class names these demos are styled against.
+The throughline: neutrals biased slightly toward the accent (never flat grey), the accent spent only on
+active/focus, every coordinate/id/threshold in monospace with `tabular-nums`, and semantic colors
+(region gold `--gold`, error red `--danger`, local-green `--ok` / remote-amber `--warn` source badges)
+kept separate from the accent.

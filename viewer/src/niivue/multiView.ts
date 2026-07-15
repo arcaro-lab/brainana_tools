@@ -45,6 +45,10 @@ export interface MorphologyDisplay {
   metric: MorphologyDisplayMetric
   curvatureStyle: CurvatureStyle
   ranges: Record<MorphologyMetric, { min: number; max: number }>
+  /** Optional per-metric colormap override (binary curvature keeps its dedicated LUT). */
+  colormaps?: Partial<Record<MorphologyMetric, string>>
+  /** Value-clip on the surface: render samples below cal_min transparent instead of clamped. */
+  transparentBelowMin?: boolean
 }
 
 export interface CrosshairInfo {
@@ -206,9 +210,11 @@ export class MultiView {
     return out
   }
 
-  // Display `valueFrame` masked by `fFrame` >= threshold. Failing voxels are set to a sentinel
-  // BELOW cal_min so they map to the transparent index-0 of the LUT (hidden, not colored-as-0).
-  applyFunctional(valueFrame: number, fFrame: number | null, threshold: number, colormap: string, opacity: number, calMin: number, calMax: number): void {
+  // Display `valueFrame` masked by `fFrame` >= threshold AND clipped to the [clipLow, clipHigh]
+  // value window (either bound null = unbounded). Failing voxels are set to a sentinel BELOW
+  // cal_min so they map to the transparent index-0 of the LUT (hidden, not colored-as-0). The
+  // F-stat mask (statistical) and the value clip (display) are independent and compose.
+  applyFunctional(valueFrame: number, fFrame: number | null, threshold: number, colormap: string, opacity: number, calMin: number, calMax: number, clipLow: number | null = null, clipHigh: number | null = null): void {
     const meta = this.#funcMeta
     const vol = this.#funcVol
     if (!meta || !vol?.img) return
@@ -218,13 +224,23 @@ export class MultiView {
     const vStart = valueFrame * frameSize
     if (!originals.has(valueFrame)) originals.set(valueFrame, Float32Array.from(img.subarray(vStart, vStart + frameSize)))
     const original = originals.get(valueFrame) as Float32Array
-    if (fFrame == null) {
+    const clipping = clipLow !== null || clipHigh !== null
+    if (fFrame == null && !clipping) {
       img.set(original, vStart)
     } else {
-      const fStart = fFrame * frameSize
+      const hasF = fFrame != null
+      const fStart = hasF ? (fFrame as number) * frameSize : 0
       for (let i = 0; i < frameSize; i++) {
-        const f = img[fStart + i] * slope + inter
-        img[vStart + i] = Number.isFinite(f) && f >= threshold ? original[i] : sentinel
+        let pass = true
+        if (hasF) {
+          const f = img[fStart + i] * slope + inter
+          pass = Number.isFinite(f) && f >= threshold
+        }
+        if (pass && clipping) {
+          const val = original[i] * slope + inter // scaled/displayed value for the clip window
+          pass = (clipLow === null || val >= clipLow) && (clipHigh === null || val <= clipHigh)
+        }
+        img[vStart + i] = pass ? original[i] : sentinel
       }
     }
     this.slices.setColormap(vol.id, colormap)
@@ -375,14 +391,20 @@ export class MultiView {
   #morphDisplay: MorphologyDisplay | null = null
   #morphIndex: Partial<Record<string, number>> = {} // layer key -> layer index (same on both hemis)
 
+  // Default colormap per continuous morphology layer; overridable via display.colormaps.
+  // Binary curvature always keeps its dedicated 2-tone LUT (not overridable).
+  #morphColormap(metric: MorphologyMetric, fallback: string): string {
+    return this.#morphDisplay?.colormaps?.[metric] ?? fallback
+  }
+
   #morphSpecs(): Array<{ key: string; metric: MorphologyMetric; pair: SurfacePairUrls; colormap: string }> {
     const specs: Array<{ key: string; metric: MorphologyMetric; pair: SurfacePairUrls; colormap: string }> = []
     if (this.#morphPairs.curvature) {
       specs.push({ key: 'curvatureBinary', metric: 'curvature', pair: this.#morphPairs.curvature, colormap: 'brainana_curvature' })
-      specs.push({ key: 'curvatureContinuous', metric: 'curvature', pair: this.#morphPairs.curvature, colormap: 'gray' })
+      specs.push({ key: 'curvatureContinuous', metric: 'curvature', pair: this.#morphPairs.curvature, colormap: this.#morphColormap('curvature', 'gray') })
     }
-    if (this.#morphPairs.sulc) specs.push({ key: 'sulc', metric: 'sulc', pair: this.#morphPairs.sulc, colormap: 'blue2red' })
-    if (this.#morphPairs.thickness) specs.push({ key: 'thickness', metric: 'thickness', pair: this.#morphPairs.thickness, colormap: 'viridis' })
+    if (this.#morphPairs.sulc) specs.push({ key: 'sulc', metric: 'sulc', pair: this.#morphPairs.sulc, colormap: this.#morphColormap('sulc', 'blue2red') })
+    if (this.#morphPairs.thickness) specs.push({ key: 'thickness', metric: 'thickness', pair: this.#morphPairs.thickness, colormap: this.#morphColormap('thickness', 'viridis') })
     return specs
   }
 
@@ -414,7 +436,8 @@ export class MultiView {
     const layersFor = (hemi: 'left' | 'right'): Record<string, unknown>[] => {
       const arr: Record<string, unknown>[] = specs.map((s) => {
         const cal = this.#morphLayerCal(s.key, s.metric)
-        return { ...NVMeshLayerDefaults, url: u(s.pair[hemi]), colormap: s.colormap, opacity: this.#morphLayerVisible(s.key) ? 1 : 0, cal_min: cal.min, cal_max: cal.max, isTransparentBelowCalMin: false, colorbarVisible: false, showLegend: false }
+        const clip = !!display?.transparentBelowMin && s.key !== 'curvatureBinary'
+        return { ...NVMeshLayerDefaults, url: u(s.pair[hemi]), colormap: s.colormap, opacity: this.#morphLayerVisible(s.key) ? 1 : 0, cal_min: cal.min, cal_max: cal.max, isTransparentBelowCalMin: clip, colorbarVisible: false, showLegend: false }
       })
       if (overlay) arr.push({ ...NVMeshLayerDefaults, url: u(overlay[hemi]), colormapLabel: overlay.table, opacity: 1, showLegend: false })
       return arr
@@ -443,12 +466,15 @@ export class MultiView {
       if (idx == null) continue
       const cal = this.#morphLayerCal(spec.key, spec.metric)
       const visible = this.#morphLayerVisible(spec.key)
+      const clip = !!display.transparentBelowMin && spec.key !== 'curvatureBinary'
       for (const mesh of this.#displayMeshes) {
         const layer = (mesh as unknown as { layers?: Array<Record<string, unknown>> }).layers?.[idx]
         if (!layer) continue
         layer.opacity = visible ? 1 : 0
         layer.cal_min = cal.min
         layer.cal_max = cal.max
+        layer.colormap = spec.colormap
+        layer.isTransparentBelowCalMin = clip
         ;(mesh as unknown as { updateMesh?: (gl: WebGL2RenderingContext) => void }).updateMesh?.(gl)
       }
     }

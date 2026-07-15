@@ -6,6 +6,7 @@
 // The color stops are exported so the legends (P5) can be drawn from the same source of truth.
 import type { Niivue } from '@niivue/niivue'
 import { hslToRgb, type RGB } from '../data/colors.ts'
+import { gradientFromRgba } from '../data/colormap.ts'
 
 export interface NiiColormap {
   R: number[]
@@ -78,3 +79,21 @@ export function registerColormaps(nv: Niivue): void {
     }
   }
 }
+
+// Build CSS gradient previews for every registered colormap in the picker registry, sampling
+// each map's LUT from NiiVue (custom maps are already registered by registerColormaps). Preview
+// only — a failed lookup falls back to a neutral gray so the picker never breaks.
+export function buildColormapGradients(nv: Niivue, keys: string[]): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const key of keys) {
+    try {
+      const rgba = (nv as unknown as { colormap: (id: string) => ArrayLike<number> }).colormap(key)
+      out[key] = rgba && rgba.length >= 4 ? gradientFromRgba(rgba) : GRAY_GRADIENT
+    } catch {
+      out[key] = GRAY_GRADIENT
+    }
+  }
+  return out
+}
+
+const GRAY_GRADIENT = 'linear-gradient(90deg, rgb(20,18,13), rgb(236,230,216))'

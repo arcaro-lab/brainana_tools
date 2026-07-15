@@ -23,6 +23,10 @@ import { createMorphologyPanel, type MorphologyPanel, type MarkerMode } from './
 import { drawVisualField } from './visualFieldPlot.ts'
 import { h, errorText } from './dom.ts'
 import { mountSourcesDialog } from './dialogs/sources.ts'
+import { buildColormapGradients } from '../niivue/colormaps.ts'
+import { COLORMAP_REGISTRY } from '../data/colormap.ts'
+
+const FALLBACK_GRADIENT = 'linear-gradient(90deg, rgb(20,18,13), rgb(236,230,216))'
 
 interface Deps {
   client: RuntimeClient
@@ -41,6 +45,51 @@ const SURFACE_LABELS: Record<string, string> = {
   sphere: 'sphere',
 }
 
+const BRAINANA_ASCII_LOGO = `
+                                                +++++++
+                                       +++++++++++++++++++++++++
+                                  +++++++++++++++++++++++++++++++++++
+                              +++++++++++++++++++++++++++++++++++++++++++
+                            +++++++++++++++++++++++++++++++++++++++++++++++
+                         +++++++++++++++++++++++++++++++++++++++++++++++++++++
+                       +++++++++++++++++++++++++       +++++++++++++++++++++++++
+                     ++++++++++++++++++++                     ++++++++++++++++++++                    +++++++++++++++++++++++              +++++++++++++++++++++++                   +++++++++++++++++++                   ++++++++               +++                         ++++               ++++++++++++++++++              +++                         ++++               ++++++++++++++++++
+                    +++++++++++++++++                             +++++++++++++++++                   +++++++++++++++++++++++++            +++++++++++++++++++++++++                +++++++++++++++++++++                  ++++++++               ++++                        ++++             +++++++++++++++++++++             +++++                       ++++             ++++++++++++++++++++++
+                  ++++++++++++++++                                   ++++++++++++++++                 ++++++++++++++++++++++++++           ++++++++++++++++++++++++++              +++++++++++++++++++++++                 ++++++++               ++++++                      ++++            ++++++++++++++++++++++++           ++++++                      ++++            ++++++++++++++++++++++++
+                 ++++++++++++++                                         ++++++++++++++                +++++++++       +++++++++++          +++++++++        ++++++++++            ++++++++++     ++++++++++                ++++++++               +++++++                     ++++           ++++++++++     ++++++++++           ++++++++                    ++++           ++++++++++      ++++++++++
+                +++++++++++++              +++++++++++++++++             ++++++++++++++               +++++++++         +++++++++          +++++++++         ++++++++++          ++++++++++       ++++++++++               ++++++++               +++++++++                   ++++          ++++++++++        +++++++++          +++++++++                   ++++           +++++++++        +++++++++
+               +++++++++++++            +++++++++++++++++++++++            +++++++++++++              +++++++++          ++++++++          +++++++++          +++++++++          +++++++++         +++++++++               ++++++++               ++++++++++                  ++++          +++++++++         +++++++++          ++++++++++                  ++++          +++++++++          +++++++++
+              +++++++++++++           +++++++++++++++++++++++++++           +++++++++++++             +++++++++          +++++++++         +++++++++          +++++++++          +++++++++          ++++++++               ++++++++               ++++++++++++                ++++          +++++++++          +++++++++         ++++++++++++                ++++          +++++++++          +++++++++
+             ++++++++++++           +++++++++++++++++++++++++++++++           ++++++++++++            +++++++++          +++++++++         +++++++++          +++++++++          +++++++++          ++++++++               ++++++++               +++++++++++++               ++++          +++++++++          +++++++++         +++++++++++++               ++++          +++++++++          +++++++++
+             +++++++++++           +++++++++++++++++++++++++++++++++           ++++++++++++           +++++++++          +++++++++         +++++++++          +++++++++          +++++++++          ++++++++               ++++++++               ++++++++++++++              ++++          +++++++++          +++++++++         +++++++++++++++             ++++          +++++++++          +++++++++
+            +++++++++++           +++++++++  +++++++++++++  +++++++++          ++++++++++++           +++++++++          ++++++++          +++++++++          +++++++++          +++++++++          ++++++++               ++++++++               ++++++++++++++++            ++++          +++++++++          +++++++++         ++++++++++++++++            ++++          +++++++++          +++++++++
+           ++++++++++++          +++++++         +++++         +++++++          ++++++++++++          +++++++++          ++++++++          +++++++++          +++++++++          +++++++++          ++++++++               ++++++++               +++++++++++++++++           ++++          +++++++++          +++++++++         ++++++++++++++++++          ++++          +++++++++          +++++++++
+           +++++++++++           ++++++            +            ++++++           +++++++++++          +++++++++          ++++++++          +++++++++          ++++++++           +++++++++          ++++++++               ++++++++               +++++++++++++++++++         ++++          +++++++++          +++++++++         +++++++++++++++++++         ++++          +++++++++          +++++++++
+           +++++++++++     +++++++++++                           +++++++++++     ++++    +++          +++++++++         ++++++++           +++++++++         ++++++++            +++++++++          ++++++++               ++++++++               ++++++++++++++++++++        ++++          +++++++++          +++++++++         +++++++++++++++++++++       ++++          +++++++++          +++++++++
+           ++++++++++     ++ +++++++++                           +++++++++ ++    ++++++++++++         +++++++++        ++++++++            +++++++++        +++++++++            +++++++++          ++++++++               ++++++++               ++++++++++++++++++++++      ++++          +++++++++          +++++++++         ++++++++++++++++++++++      ++++          +++++++++          +++++++++
+          +++++++++++     ++    ++++++     +++        +++        ++++++    ++     +++    ++++         +++++++++++++++++++++++              ++++++++++++++++++++++++              +++++++++++++++++++++++++++               ++++++++               ++++  +++++++++++++++++     ++++          ++++++++++++++++++++++++++++         ++++  +++++++++++++++++     ++++          ++++++++++++++++++++++++++++
+          +++++++++++      +++++++++++     +++  +     ++++ +     +++++++++++      +++++++++++         ++++++++++++++++++++                 +++++++++++++++++++++                 +++++++++++++++++++++++++++               ++++++++               ++++   ++++++++++++++++++   ++++          ++++++++++++++++++++++++++++         ++++   ++++++++++++++++++   ++++          ++++++++++++++++++++++++++++
+          +++++++++++            ++++++     +++         +++     ++++++            +++    ++++         +++++++++++++++++++++++              ++++++++++++++++++++++++++            +++++++++++++++++++++++++++               ++++++++               ++++     +++++++++++++++++  ++++          ++++++++++++++++++++++++++++         ++++     +++++++++++++++++  ++++          ++++++++++++++++++++++++++++
+          +++++++++++            +++++                           +++++           ++++++++++++         +++++++++       +++++++++            +++++++++       ++++++++++++          +++++++++         +++++++++               ++++++++               ++++      ++++++++++++++++++++++          +++++++++          +++++++++         ++++      ++++++++++++++++++++++          +++++++++          +++++++++
+           +++++++++++          +++                                 +++          +++++++++++          +++++++++         ++++++++           +++++++++         ++++++++++          +++++++++          ++++++++               ++++++++               ++++       +++++++++++++++++++++          +++++++++          +++++++++         ++++        ++++++++++++++++++++          +++++++++          +++++++++
+           +++++++++++         +++                 +                 +++         +++++++++++          +++++++++          ++++++++          +++++++++          +++++++++          +++++++++          ++++++++               ++++++++               ++++         +++++++++++++++++++          +++++++++          +++++++++         ++++         +++++++++++++++++++          +++++++++          +++++++++
+           ++++++++++++        +++                 +  +              +++        ++++++++++++          +++++++++          ++++++++          +++++++++          +++++++++          +++++++++          ++++++++               ++++++++               ++++          ++++++++++++++++++          +++++++++          +++++++++         ++++          ++++++++++++++++++          +++++++++          +++++++++
+            +++++++++++         ++              +++++++              +++        +++++++++++           +++++++++          ++++++++          +++++++++          +++++++++          +++++++++          ++++++++               ++++++++               ++++            ++++++++++++++++          +++++++++          +++++++++         ++++            ++++++++++++++++          +++++++++          +++++++++
+            ++++++++++++        +++                                 +++        ++++++++++++           +++++++++          +++++++++         +++++++++          +++++++++          +++++++++          ++++++++               ++++++++               ++++             +++++++++++++++          +++++++++          +++++++++         ++++             +++++++++++++++          +++++++++          +++++++++
+             ++++++++++++        ++++                             ++++        ++++++++++++            +++++++++          +++++++++         +++++++++          +++++++++          +++++++++          ++++++++               ++++++++               ++++               +++++++++++++          +++++++++          +++++++++         ++++               +++++++++++++          +++++++++          +++++++++
+              ++++++++++++         ++++                         ++++         ++++++++++++             +++++++++          +++++++++         +++++++++          +++++++++          +++++++++          ++++++++               ++++++++               ++++                ++++++++++++          +++++++++          +++++++++         ++++                ++++++++++++          +++++++++          +++++++++
+               ++++++++++++          ++++++                 ++++++          +++++++++++++             +++++++++          +++++++++         +++++++++          +++++++++          +++++++++          ++++++++               ++++++++               ++++                 +++++++++++          +++++++++          +++++++++         ++++                  ++++++++++          +++++++++          +++++++++
+               ++++++++++++++            ++++++++++++++++++++++           +++++++++++++               +++++++++         +++++++++          +++++++++          +++++++++          +++++++++          ++++++++               ++++++++               ++++                   +++++++++          +++++++++          +++++++++         ++++                   +++++++++          +++++++++          +++++++++
+                 ++++++++++++++              +++++++++++++              ++++++++++++++                +++++++++        ++++++++++          +++++++++          +++++++++          +++++++++          ++++++++               ++++++++               ++++                    ++++++++          +++++++++          +++++++++         ++++                    ++++++++          +++++++++          +++++++++
+                  +++++++++++++++                                     +++++++++++++++                 ++++++++++++++++++++++++++           +++++++++          +++++++++          +++++++++          ++++++++               ++++++++               ++++                      ++++++          +++++++++          +++++++++         ++++                      ++++++          +++++++++          +++++++++
+                   ++++++++++++++                                     ++++++++++++++                  +++++++++++++++++++++++++            +++++++++          +++++++++          +++++++++          ++++++++               ++++++++               ++++                       +++++          +++++++++          +++++++++         ++++                       +++++          +++++++++          +++++++++
+                     +++++++++++     ++                         ++     +++++++++++                    ++++++++++++++++++++++++             +++++++++          +++++++++          +++++++++          ++++++++               ++++++++               ++++                         +++          +++++++++          +++++++++         ++++                         +++          +++++++++          +++++++++
+                       ++++++++     ++++++++               ++++++++     ++++++++                      +++++++++++++++++++++                +++++++++          +++++++++          ++++++++           ++++++++               ++++++++               ++++                          ++          +++++++++          +++++++++         ++++                          ++          +++++++++          +++++++++
+                        ++++++     +++++++++++++++++++++++++++++++++     ++++++
+                           ++     +++++++++++++++++++++++++++++++++++     ++
+                                 +++++++++++++++++++++++++++++++++++++
+`.slice(1).trimEnd()
+
 // Build a <dl> of <dt>/<dd> label:value rows for the info panel.
 function dlRows(pairs: Array<[string, string | Node]>): HTMLDListElement {
   const dl = h('dl')
@@ -52,7 +101,9 @@ const LAYOUTS: Array<{ k: Layout; glyph: string; title: string }> = [
   { k: 'row', glyph: '▬', title: 'Surface on top, planes in a row' },
   { k: 'column', glyph: '▮', title: 'Surface on top, planes in a column' },
 ]
-const PANEL_BUTTONS = ['Atlases', 'Morphology', 'Function', 'Imported', 'Import', 'Export']
+// Only the wired category tabs are shown. Imported/Import/Export are deferred Phase-3 work and
+// were previously rendered permanently-disabled (reading as broken) — hidden until implemented.
+const PANEL_BUTTONS = ['Atlases', 'Morphology', 'Function']
 // Camera view presets shown in the surf row (Req 4). Lateral/Medial are hemisphere-aware.
 const VIEW_PRESETS: Array<{ k: 'lateral' | 'medial' | 'ventral' | 'dorsal' | 'anterior' | 'posterior'; label: string }> = [
   { k: 'lateral', label: 'Lat' },
@@ -129,8 +180,7 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
     b.dataset.layout = l.k
     return b
   })
-  const enabledPanels = new Set(['Atlases', 'Morphology', 'Function', 'Reset views'])
-  const panelBtns = PANEL_BUTTONS.map((name) => h('button', { type: 'button', class: 'panel-btn', disabled: !enabledPanels.has(name) }, [name]))
+  const panelBtns = PANEL_BUTTONS.map((name) => h('button', { type: 'button', class: 'panel-btn' }, [name]))
   const viewBtns = VIEW_PRESETS.map((v) => {
     const b = h('button', { type: 'button', class: 'view-btn', title: `${v.label} view` }, [v.label])
     b.dataset.view = v.k
@@ -153,9 +203,9 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
       h('label', { class: 'tb-field inline' }, [rhCheck, h('span', {}, ['RH'])]),
       h('div', { class: 'views' }, viewBtns),
     ]),
-    // col 4: Atlases/Morphology/Function (row 1) · Imported/Import/Export (row 2)
-    h('div', { class: 'tb-cell panels' }, panelBtns.slice(0, 3)),
-    h('div', { class: 'tb-cell panels' }, panelBtns.slice(3)),
+    // col 4: category tabs (row 1); row 2 reserved for future Import/Export controls.
+    h('div', { class: 'tb-cell panels' }, panelBtns),
+    h('div', { class: 'tb-cell' }, []),
   ])
 
   // --- main grid ---
@@ -192,7 +242,22 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
       h('div', { id: 'report-visual-note', class: 'muted' }, ['Select a retinotopy map.']),
     ]),
   ])
-  const placeholder = h('div', { class: 'monkey-placeholder' }, ['Select a monkey to begin.'])
+  const placeholderText = h('p', { class: 'placeholder-text' }, ['Select a dataset and a monkey to begin.'])
+  const asciiEl = h('pre', { class: 'monkey-ascii' }, [BRAINANA_ASCII_LOGO])
+  const placeholderContent = h('div', { class: 'placeholder-content' }, [placeholderText, asciiEl])
+  const placeholder = h('div', { class: 'monkey-placeholder' }, [placeholderContent])
+  {
+    const fitAsciiLogo = (): void => {
+      asciiEl.style.fontSize = '1px'
+      const width = placeholder.clientWidth
+      if (width <= 0 || asciiEl.scrollWidth <= 0) return
+      const ratio = width / asciiEl.scrollWidth
+      asciiEl.style.fontSize = `${Math.min(ratio * 0.88, 4)}px`
+    }
+    const ro = new ResizeObserver(fitAsciiLogo)
+    ro.observe(placeholder)
+    requestAnimationFrame(fitAsciiLogo)
+  }
   const loadingText = h('div', { class: 'loading-text' }, ['Loading…'])
   const loadingOverlay = h('div', { class: 'loading-overlay', hidden: true }, [h('div', { class: 'spinner' }), loadingText])
   const main = h('main', { class: 'dashboard' }, [viewerArea, atlasLegend, panelResizer, infoResizer, infoPanel, placeholder, loadingOverlay])
@@ -295,9 +360,12 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
     thickness: { ...MORPH_DEFAULT_RANGE.thickness },
   }
   const morphSymmetric: Record<MorphologyMetric, boolean> = { curvature: true, sulc: true, thickness: false }
+  // Per-metric colormap override for the continuous morphology layers (binary curvature is fixed).
+  const morphColormaps: Partial<Record<MorphologyMetric, string>> = { curvature: 'gray', sulc: 'blue2red', thickness: 'viridis' }
+  let morphTransparentBelowMin = false
   let markerMode: MarkerMode = 'nearestNode'
   let lastCrosshairMm: [number, number, number] | null = null
-  const morphDisplay = (): MorphologyDisplay => ({ metric: morphMetric, curvatureStyle: morphStyle, ranges: morphRanges })
+  const morphDisplay = (): MorphologyDisplay => ({ metric: morphMetric, curvatureStyle: morphStyle, ranges: morphRanges, colormaps: morphColormaps, transparentBelowMin: morphTransparentBelowMin })
 
   const placeMarker = (): void => {
     if (!view) return
@@ -475,6 +543,12 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
   let funcOpacity = 0.85
   let funcBrightness = 1.25
   let funcToken = 0
+  // Colormap override (null = the active map's default) and value-clip window (null = unbounded).
+  let funcColormap: string | null = null
+  let funcClipLo: number | null = null
+  let funcClipHi: number | null = null
+  // Memoized CSS gradient previews per colormap key (subject-independent; built once view exists).
+  let colormapGradients: Record<string, string> = {}
   // Per-hemisphere parsed frames of the currently loaded function surface .func.gii, cached so a
   // threshold/brightness drag re-quantizes in place without re-fetching (keyed by choice.kind).
   let funcSurfaceFrames: { kind: string; left: Float32Array[]; right: Float32Array[] } | null = null
@@ -620,8 +694,28 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
     if (note) note.textContent = points.length ? '' : 'No valid retinotopic voxel here.'
   }
 
+  // Active volume colormap for the function overlay: the user override, else the map's default.
+  const funcColormapKey = (): string => funcColormap ?? funcChoice?.mode.colormap ?? 'gray'
+
+  const updateFuncColorbar = (): void => {
+    if (!funcChoice) {
+      functionPanel?.setColorbar(null)
+      return
+    }
+    functionPanel?.setColorbar({
+      gradient: colormapGradients[funcColormapKey()] ?? FALLBACK_GRADIENT,
+      min: funcChoice.mode.calMin,
+      max: funcChoice.mode.calMax,
+      clipLow: funcClipLo,
+      clipHigh: funcClipHi,
+    })
+  }
+
   const applyFunctionNow = (): void => {
-    if (view && funcChoice) view.applyFunctional(funcChoice.mode.valueFrame, funcChoice.mode.fFrame, funcThreshold, funcChoice.mode.colormap, funcOpacity, funcChoice.mode.calMin, funcChoice.mode.calMax)
+    if (view && funcChoice) {
+      view.applyFunctional(funcChoice.mode.valueFrame, funcChoice.mode.fFrame, funcThreshold, funcColormapKey(), funcOpacity, funcChoice.mode.calMin, funcChoice.mode.calMax, funcClipLo, funcClipHi)
+      updateFuncColorbar()
+    }
   }
 
   const selectFunction = async (choice: FunctionChoice | null): Promise<void> => {
@@ -629,11 +723,20 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
     const token = ++funcToken
     funcChoice = choice
     funcSurfaceFrames = null // invalidate the cached surface frames for the previous choice
+    // Reset per-map display overrides: use the map's default colormap and clip nothing.
+    funcColormap = null
+    funcClipLo = null
+    funcClipHi = null
     functionPanel?.setActive(choice ? choiceKey(choice) : null)
+    if (choice) {
+      functionPanel?.setColormap(choice.mode.colormap)
+      functionPanel?.setClipDomain(choice.mode.calMin, choice.mode.calMax)
+    }
     funcCaption.textContent = choice ? `${choice.kind === 'retinotopy' ? 'Retinotopy' : 'Somatotopy'} · ${choice.mode.label}` : 'Select a function map.'
     if (!choice) {
       view.removeFunctional()
       view.clearSurfaceFunctionLayers()
+      functionPanel?.setColorbar(null)
       updateFunctionReport()
       updateVisualField()
       return
@@ -703,6 +806,19 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
     const metric: MorphologyMetric = morphMetric === 'none' ? 'curvature' : morphMetric
     const hidden = morphMetric === 'none' || (morphMetric === 'curvature' && morphStyle === 'binary')
     morphPanel?.setRange({ domainMin: MORPH_DOMAIN[metric].min, domainMax: MORPH_DOMAIN[metric].max, min: morphRanges[metric].min, max: morphRanges[metric].max, metric, hidden, symmetric: morphSymmetric[metric] })
+    // Colormap picker + colorbar track the active continuous metric (hidden for None / binary curvature).
+    morphPanel?.setColormapVisible(!hidden)
+    if (!hidden) {
+      const key = morphColormaps[metric] ?? 'gray'
+      morphPanel?.setColormap(key)
+      morphPanel?.setColorbar({
+        gradient: colormapGradients[key] ?? FALLBACK_GRADIENT,
+        min: morphRanges[metric].min,
+        max: morphRanges[metric].max,
+        clipLow: morphTransparentBelowMin ? morphRanges[metric].min : null,
+        clipHigh: null,
+      })
+    }
   }
 
   // 2.5–97.5 percentile of the loaded .shape.gii data across both hemispheres (thickness ignores
@@ -899,6 +1015,8 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
 
       if (!view) {
         view = new MultiView(slicesCanvas, surfaceCanvas, client)
+        // Colormap gradient previews are subject-independent — build once from the registered maps.
+        colormapGradients = buildColormapGradients(view.slices, COLORMAP_REGISTRY.map((c) => c.key))
         marker = new Marker(view.render)
         gizmo = new OrientationGizmo(surfacePane, view.render)
         gizmo.start()
@@ -983,7 +1101,16 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
           funcBrightness = v
           void applyFunctionSurface()
         },
-      })
+        onColormap: (key) => {
+          funcColormap = key
+          applyFunctionNow() // colormap override applies to the slice overlay; surface keeps its retinotopy LUT
+        },
+        onClip: (lo, hi) => {
+          funcClipLo = lo
+          funcClipHi = hi
+          applyFunctionNow()
+        },
+      }, colormapGradients)
       sidePicker.append(functionPanel.element)
       funcChoice = null
       loadMorphology(manifest)
@@ -993,6 +1120,10 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
       morphMetric = 'curvature'
       morphStyle = 'binary'
       markerMode = 'nearestNode'
+      morphTransparentBelowMin = false
+      morphColormaps.curvature = 'gray'
+      morphColormaps.sulc = 'blue2red'
+      morphColormaps.thickness = 'viridis'
       morphRanges.curvature = { ...MORPH_DEFAULT_RANGE.curvature }
       morphRanges.sulc = { ...MORPH_DEFAULT_RANGE.sulc }
       morphRanges.thickness = { ...MORPH_DEFAULT_RANGE.thickness }
@@ -1016,6 +1147,7 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
           const metric = morphMetric === 'none' ? 'curvature' : morphMetric
           morphRanges[metric] = { min, max }
           view?.applyMorphologyDisplay(morphDisplay())
+          syncMorphRange() // keep the colorbar in step with the range
         },
         onSymmetric: (on) => {
           const metric = morphMetric === 'none' ? 'curvature' : morphMetric
@@ -1027,7 +1159,18 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
           view?.applyMorphologyDisplay(morphDisplay())
           syncMorphRange()
         },
-      })
+        onColormap: (key) => {
+          const metric = morphMetric === 'none' ? 'curvature' : morphMetric
+          morphColormaps[metric] = key
+          view?.applyMorphologyDisplay(morphDisplay())
+          syncMorphRange() // refresh the colorbar gradient
+        },
+        onTransparentBelowMin: (on) => {
+          morphTransparentBelowMin = on
+          view?.applyMorphologyDisplay(morphDisplay())
+          syncMorphRange()
+        },
+      }, colormapGradients)
       sidePicker.append(morphPanel.element)
       syncMorphRange()
 
