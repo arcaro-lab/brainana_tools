@@ -100,7 +100,7 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
 
   // --- top bar: two rows (vol row + surf row), surf field aligned under the vol field ---
   const monkeySelect = h('select', { id: 'monkey-select' }, [h('option', { value: '' }, ['Select monkey…'])])
-  const datasetBtn = h('button', { type: 'button', class: 'ghost' }, ['Dataset'])
+  const datasetBtn = h('button', { type: 'button', class: 'primary' }, ['Dataset'])
   const volCheck = h('input', { type: 'checkbox' }) as HTMLInputElement
   volCheck.checked = true
   const volSelect = h('select', { title: 'Base volume (FreeSurfer mri/)', class: 'narrow' })
@@ -832,8 +832,12 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
             el.innerHTML = ''
             el.append(
               dlRows([
-                ['XYZ (mm)', `${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}`],
-                ['IJK', ijk ? ijk.join(', ') : '—'],
+                ['X (mm)', x.toFixed(2)],
+                ['Y (mm)', y.toFixed(2)],
+                ['Z (mm)', z.toFixed(2)],
+                ['I', ijk ? String(ijk[0]) : '—'],
+                ['J', ijk ? String(ijk[1]) : '—'],
+                ['K', ijk ? String(ijk[2]) : '—'],
                 ['Hemisphere', hemiNode ? (hemiNode.hemi === 0 ? 'Left' : 'Right') : '—'],
               ]),
             )

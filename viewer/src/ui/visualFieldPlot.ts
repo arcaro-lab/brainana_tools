@@ -16,21 +16,21 @@ export function drawVisualField(canvas: HTMLCanvasElement, points: VfPoint[], st
 
   // Label-aware layout: keep the anatomical side labels fully inside the canvas; a slight leftward
   // center bias gives the longer "Right" label equal breathing room.
-  ctx.font = '700 18px system-ui, sans-serif'
+  ctx.font = '600 13px system-ui, sans-serif'
   const leftW = ctx.measureText('Left').width
   const rightW = ctx.measureText('Right').width
-  const sideGap = 12
-  const edgePad = 8
+  const sideGap = 7
+  const edgePad = 4
   const cx = size / 2 - Math.max(0, (rightW - leftW) / 4)
   const cy = size / 2
   const hRadius = Math.min(cx - leftW - sideGap - edgePad, size - cx - rightW - sideGap - edgePad)
-  const radius = Math.max(20, Math.min(size * 0.365, hRadius))
+  const radius = Math.max(20, Math.min(size * 0.44, hRadius))
   const pxPerDeg = radius / ECC_MAX
   const toPx = (x: number, y: number): [number, number] => [cx + x * pxPerDeg, cy - y * pxPerDeg]
 
   // eccentricity rings
-  ctx.strokeStyle = 'rgba(180,195,214,0.36)'
-  ctx.lineWidth = 2.8
+  ctx.strokeStyle = 'rgba(190,182,166,0.34)'
+  ctx.lineWidth = 1.5
   for (const r of RINGS) {
     ctx.beginPath()
     ctx.arc(cx, cy, r * pxPerDeg, 0, 2 * Math.PI)
@@ -38,8 +38,8 @@ export function drawVisualField(canvas: HTMLCanvasElement, points: VfPoint[], st
   }
 
   // horizontal + vertical meridian axes
-  ctx.strokeStyle = 'rgba(215,225,237,0.68)'
-  ctx.lineWidth = 3
+  ctx.strokeStyle = 'rgba(212,204,188,0.62)'
+  ctx.lineWidth = 1.8
   ctx.beginPath()
   ctx.moveTo(cx - radius, cy)
   ctx.lineTo(cx + radius, cy)
@@ -48,26 +48,26 @@ export function drawVisualField(canvas: HTMLCanvasElement, points: VfPoint[], st
   ctx.stroke()
 
   // cardinal labels
-  ctx.fillStyle = 'rgba(230,237,246,0.98)'
-  ctx.font = '700 18px system-ui, sans-serif'
+  ctx.fillStyle = 'rgba(240,234,220,0.98)'
+  ctx.font = '600 13px system-ui, sans-serif'
   ctx.textBaseline = 'alphabetic'
   ctx.textAlign = 'center'
-  ctx.fillText('Upper', cx, cy - radius - 12)
-  ctx.fillText('Lower', cx, cy + radius + 22)
+  ctx.fillText('Upper', cx, cy - radius - 7)
+  ctx.fillText('Lower', cx, cy + radius + 16)
   ctx.textAlign = 'right'
-  ctx.fillText('Left', cx - radius - 12, cy + 6)
+  ctx.fillText('Left', cx - radius - 8, cy + 4)
   ctx.textAlign = 'left'
-  ctx.fillText('Right', cx + radius + 12, cy + 6)
+  ctx.fillText('Right', cx + radius + 8, cy + 4)
 
   // degree labels along the upper vertical meridian
-  ctx.fillStyle = 'rgba(225,234,244,0.92)'
-  ctx.font = '700 14px system-ui, sans-serif'
+  ctx.fillStyle = 'rgba(230,224,210,0.92)'
+  ctx.font = '600 10px system-ui, sans-serif'
   ctx.textAlign = 'left'
-  for (const r of RINGS) ctx.fillText(`${r}°`, cx + 3, cy - r * pxPerDeg + 10)
+  for (const r of RINGS) ctx.fillText(`${r}°`, cx + 4, cy - r * pxPerDeg + 3)
 
   // small center tick cross
-  ctx.strokeStyle = 'rgba(235,241,247,0.9)'
-  ctx.lineWidth = 2.6
+  ctx.strokeStyle = 'rgba(236,230,216,0.9)'
+  ctx.lineWidth = 1.8
   ctx.beginPath()
   ctx.moveTo(cx - 4, cy)
   ctx.lineTo(cx + 4, cy)
@@ -83,9 +83,9 @@ export function drawVisualField(canvas: HTMLCanvasElement, points: VfPoint[], st
     ctx.rotate(-stats.ellipse.angle)
     ctx.beginPath()
     ctx.ellipse(0, 0, Math.max(1, stats.ellipse.rx * pxPerDeg), Math.max(1, stats.ellipse.ry * pxPerDeg), 0, 0, 2 * Math.PI)
-    ctx.fillStyle = 'rgba(67,154,232,0.14)'
-    ctx.strokeStyle = 'rgba(93,174,245,0.78)'
-    ctx.lineWidth = 3.2
+    ctx.fillStyle = 'rgba(230,161,58,0.16)'
+    ctx.strokeStyle = 'rgba(244,200,119,0.85)'
+    ctx.lineWidth = 2
     ctx.fill()
     ctx.stroke()
     ctx.restore()
@@ -97,7 +97,7 @@ export function drawVisualField(canvas: HTMLCanvasElement, points: VfPoint[], st
   if (center) {
     const [px, py] = toPx(center.x, center.y)
     ctx.strokeStyle = 'rgba(255,205,72,0.92)'
-    ctx.lineWidth = 2.8
+    ctx.lineWidth = 2
     ctx.beginPath()
     ctx.moveTo(cx, cy)
     ctx.lineTo(px, py)
@@ -106,7 +106,7 @@ export function drawVisualField(canvas: HTMLCanvasElement, points: VfPoint[], st
       const [mx, my] = toPx(stats.medianX, stats.medianY)
       ctx.save()
       ctx.setLineDash([4, 4])
-      ctx.strokeStyle = 'rgba(236,241,247,0.6)'
+      ctx.strokeStyle = 'rgba(236,230,216,0.6)'
       ctx.beginPath()
       ctx.moveTo(px, py)
       ctx.lineTo(mx, my)
@@ -116,12 +116,12 @@ export function drawVisualField(canvas: HTMLCanvasElement, points: VfPoint[], st
   }
 
   // neighbor sample dots
-  ctx.fillStyle = 'rgba(83,184,238,0.75)'
+  ctx.fillStyle = 'rgba(230,161,58,0.80)'
   for (const p of points) {
     if (p.center) continue
     const [px, py] = toPx(p.x, p.y)
     ctx.beginPath()
-    ctx.arc(px, py, 4.5, 0, 2 * Math.PI)
+    ctx.arc(px, py, 3.4, 0, 2 * Math.PI)
     ctx.fill()
   }
 
@@ -131,9 +131,9 @@ export function drawVisualField(canvas: HTMLCanvasElement, points: VfPoint[], st
     ctx.save()
     ctx.translate(mx, my)
     ctx.rotate(Math.PI / 4)
-    ctx.strokeStyle = 'rgba(244,247,251,0.9)'
-    ctx.lineWidth = 2.7
-    ctx.strokeRect(-5.25, -5.25, 10.5, 10.5)
+    ctx.strokeStyle = 'rgba(240,234,220,0.9)'
+    ctx.lineWidth = 2
+    ctx.strokeRect(-4.25, -4.25, 8.5, 8.5)
     ctx.restore()
   }
 
@@ -141,10 +141,10 @@ export function drawVisualField(canvas: HTMLCanvasElement, points: VfPoint[], st
   if (center) {
     const [px, py] = toPx(center.x, center.y)
     ctx.beginPath()
-    ctx.arc(px, py, 7.5, 0, 2 * Math.PI)
+    ctx.arc(px, py, 5.5, 0, 2 * Math.PI)
     ctx.fillStyle = '#ffd04a'
-    ctx.strokeStyle = '#15191f'
-    ctx.lineWidth = 3
+    ctx.strokeStyle = '#1a1610'
+    ctx.lineWidth = 2.5
     ctx.fill()
     ctx.stroke()
   }

@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Brainana Viewer — Refined Instrument · design demos</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+:root{
+  --bg:#0c1016; --panel:#12171f; --panel-2:#19212b; --text:#e6ecf3; --muted:#8496a8;
+  --border:#212c38; --border-2:#2c3a48; --accent:#5aa8f0;
+  --font:"Archivo",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+*{box-sizing:border-box;} html,body{margin:0;}
+body{font-family:var(--font);background:radial-gradient(1200px 640px at 50% -10%,#141c26 0%,transparent 60%),var(--bg);color:var(--text);line-height:1.55;-webkit-font-smoothing:antialiased;}
+a{color:inherit;text-decoration:none;}
+.page{max-width:1200px;margin:0 auto;padding:56px 28px 100px;}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--accent);margin:0 0 12px;}
+h1{font-size:clamp(32px,5vw,52px);font-weight:700;letter-spacing:-0.025em;line-height:1.02;margin:0 0 16px;text-wrap:balance;}
+.lead{max-width:74ch;color:var(--muted);font-size:16.5px;margin:0 0 6px;}
+.lead b{color:var(--text);font-weight:600;}
+.meta{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:18px;display:flex;gap:18px;flex-wrap:wrap;}
+.meta span{display:flex;align-items:center;gap:7px;}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--accent);}
+
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px;margin-top:44px;}
+.card{border:1px solid var(--border);border-radius:16px;overflow:hidden;background:var(--panel);
+  transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease;display:flex;flex-direction:column;}
+.card:hover{transform:translateY(-4px);border-color:var(--border-2);box-shadow:0 24px 60px -30px rgba(0,0,0,.8);}
+.card:focus-within{outline:2px solid var(--accent);outline-offset:2px;}
+
+/* live mini-preview rendered in each variant's own palette */
+.preview{height:150px;position:relative;overflow:hidden;border-bottom:1px solid var(--border);}
+.mini-toolbar{position:absolute;inset:0 0 auto 0;height:34px;display:flex;align-items:center;gap:8px;padding:0 12px;
+  font-family:var(--mono);font-size:10px;}
+.mini-brand{display:flex;align-items:center;gap:6px;font-weight:700;letter-spacing:.02em;}
+.mini-brand i{width:7px;height:7px;border-radius:50%;display:inline-block;}
+.mini-tab{margin-left:auto;display:flex;gap:5px;}
+.mini-tab b{padding:2px 7px;border-radius:5px;border:1px solid;font-weight:500;}
+.mini-body{position:absolute;inset:34px 0 0 0;display:grid;grid-template-columns:1.5fr 1fr;gap:1px;}
+.mini-view{position:relative;overflow:hidden;}
+.mini-brain{position:absolute;inset:0;}
+.mini-swatches{display:flex;flex-direction:column;}
+.mini-swatches div{flex:1;}
+
+.card-body{padding:18px 20px 20px;display:flex;flex-direction:column;gap:10px;flex:1;}
+.card h2{font-size:19px;margin:0;letter-spacing:-0.01em;}
+.card .tag{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.05em;text-transform:uppercase;}
+.card p{margin:0;color:var(--muted);font-size:14px;flex:1;}
+.chips{display:flex;gap:6px;flex-wrap:wrap;font-family:var(--mono);font-size:11px;}
+.chips span{padding:2px 8px;border-radius:999px;border:1px solid var(--border-2);color:var(--muted);}
+.open{margin-top:6px;font-family:var(--mono);font-size:13px;font-weight:500;color:var(--text);display:inline-flex;align-items:center;gap:8px;}
+.card:hover .open .arrow{transform:translateX(4px);}
+.arrow{transition:transform .18s ease;}
+.stretched{position:absolute;inset:0;z-index:1;}
+
+.how{margin-top:64px;border-top:1px solid var(--border);padding-top:28px;color:var(--muted);font-size:14.5px;max-width:80ch;}
+.how h3{font-family:var(--mono);font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin:0 0 12px;}
+.how code{font-family:var(--mono);font-size:.85em;background:var(--panel-2);border-radius:5px;padding:.15em .45em;color:var(--text);}
+.how b{color:var(--text);}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important;}}
+</style>
+</head>
+<body>
+<div class="page">
+  <p class="eyebrow">Brainana Viewer · UI restyle</p>
+  <h1>Refined Instrument — three variations</h1>
+  <p class="lead">Three visual identities for the viewer, all in the <b>Refined Instrument</b> direction:
+  a deliberate cool-neutral palette, one confident accent, a monospace face for every number, and crisp
+  hairline seams. Each demo shows the full single-screen dashboard at true density, plus its token board
+  and component set. Open all three, then pick the one to build.</p>
+  <div class="meta">
+    <span><i class="dot"></i>Dark, single-screen instrument</span>
+    <span>Self-contained HTML · no build step</span>
+    <span>Class names mirror the app's DOM</span>
+  </div>
+
+  <div class="cards">
+
+    <!-- A -->
+    <div class="card">
+      <a class="stretched" href="refined-a-slate-cyan.html" aria-label="Open Variant A — Slate + Cyan"></a>
+      <div class="preview" style="background:#0e141b">
+        <div class="mini-toolbar" style="background:#141d27;border-bottom:1px solid #233140;color:#8598aa">
+          <span class="mini-brand" style="color:#dfe7ef"><i style="background:#38c6d8;box-shadow:0 0 8px #38c6d8"></i>BRAINANA</span>
+          <span class="mini-tab">
+            <b style="border-color:#38c6d8;color:#04222a;background:#38c6d8">Atlases</b>
+            <b style="border-color:#233140;color:#8598aa">Function</b>
+          </span>
+        </div>
+        <div class="mini-body" style="background:#233140">
+          <div class="mini-view" style="background:#05070a">
+            <div class="mini-brain" style="background:radial-gradient(42% 60% at 52% 50%,#c9ccce,#5c636d 55%,#12161c 82%,#05070a)"></div>
+            <div style="position:absolute;left:0;right:0;top:52%;height:1px;background:#38c6d8;opacity:.7"></div>
+            <div style="position:absolute;top:0;bottom:0;left:47%;width:1px;background:#38c6d8;opacity:.7"></div>
+          </div>
+          <div class="mini-swatches">
+            <div style="background:#141d27"></div><div style="background:#1b2733"></div>
+            <div style="background:#38c6d8"></div><div style="background:#f1d272"></div>
+          </div>
+        </div>
+      </div>
+      <div class="card-body">
+        <span class="tag">Variant A</span>
+        <h2>Slate + Cyan</h2>
+        <p>Cool blue-slate neutrals with a refined cyan accent. The calmest, most neutral option — the elevated version of today's dark theme.</p>
+        <div class="chips"><span>Archivo</span><span>JetBrains Mono</span><span>balanced contrast</span></div>
+        <span class="open">Open demo <span class="arrow">→</span></span>
+      </div>
+    </div>
+
+    <!-- B -->
+    <div class="card">
+      <a class="stretched" href="refined-b-graphite-amber.html" aria-label="Open Variant B — Graphite + Amber"></a>
+      <div class="preview" style="background:#14120d">
+        <div class="mini-toolbar" style="background:#1c1913;border-bottom:1px solid #2b2518;color:#a1957f">
+          <span class="mini-brand" style="color:#ece6d8"><i style="background:#e6a13a;box-shadow:0 0 8px #e6a13a"></i>BRAINANA</span>
+          <span class="mini-tab">
+            <b style="border-color:#e6a13a;color:#241700;background:#e6a13a">Atlases</b>
+            <b style="border-color:#2b2518;color:#a1957f">Function</b>
+          </span>
+        </div>
+        <div class="mini-body" style="background:#2b2518">
+          <div class="mini-view" style="background:#08060a">
+            <div class="mini-brain" style="background:radial-gradient(42% 60% at 52% 50%,#d3cdc0,#635948 55%,#1a1611 82%,#08060a)"></div>
+            <div style="position:absolute;left:0;right:0;top:52%;height:1px;background:#e6a13a;opacity:.72"></div>
+            <div style="position:absolute;top:0;bottom:0;left:47%;width:1px;background:#e6a13a;opacity:.72"></div>
+          </div>
+          <div class="mini-swatches">
+            <div style="background:#1c1913"></div><div style="background:#241f17"></div>
+            <div style="background:#e6a13a"></div><div style="background:#f1d272"></div>
+          </div>
+        </div>
+      </div>
+      <div class="card-body">
+        <span class="tag">Variant B</span>
+        <h2>Graphite + Amber</h2>
+        <p>Warm graphite neutrals under an amber accent that carries today's signature gold. Softer contrast and a humanist face — easiest for long sessions.</p>
+        <div class="chips"><span>Source Sans 3</span><span>IBM Plex Mono</span><span>warm · soft</span></div>
+        <span class="open">Open demo <span class="arrow">→</span></span>
+      </div>
+    </div>
+
+    <!-- C -->
+    <div class="card">
+      <a class="stretched" href="refined-c-deepspace-signal.html" aria-label="Open Variant C — Deep-space + Signal"></a>
+      <div class="preview" style="background:#06080c">
+        <div class="mini-toolbar" style="background:#0b0f15;border-bottom:1px solid #18212b;color:#6f8093">
+          <span class="mini-brand" style="color:#e9eef4"><i style="background:#4be08a;box-shadow:0 0 10px #4be08a"></i>BRAINANA</span>
+          <span class="mini-tab">
+            <b style="border-color:#4be08a;color:#04140b;background:#4be08a">Atlases</b>
+            <b style="border-color:#18212b;color:#6f8093">Function</b>
+          </span>
+        </div>
+        <div class="mini-body" style="background:#18212b">
+          <div class="mini-view" style="background:#000205">
+            <div class="mini-brain" style="background:radial-gradient(42% 60% at 52% 50%,#cdd2d6,#565d67 55%,#0f1319 82%,#000205)"></div>
+            <div style="position:absolute;left:0;right:0;top:52%;height:1px;background:#4be08a;opacity:.8;box-shadow:0 0 6px #4be08a"></div>
+            <div style="position:absolute;top:0;bottom:0;left:47%;width:1px;background:#4be08a;opacity:.8"></div>
+          </div>
+          <div class="mini-swatches">
+            <div style="background:#0b0f15"></div><div style="background:#10161e"></div>
+            <div style="background:#4be08a"></div><div style="background:#f1d272"></div>
+          </div>
+        </div>
+      </div>
+      <div class="card-body">
+        <span class="tag">Variant C</span>
+        <h2>Deep-space + Signal</h2>
+        <p>Near-black, high-contrast, with an electric-green signal accent and mono-forward chrome. The most dramatic — a mission-console read-out.</p>
+        <div class="chips"><span>IBM Plex Sans</span><span>JetBrains Mono</span><span>high contrast</span></div>
+        <span class="open">Open demo <span class="arrow">→</span></span>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="how">
+    <h3>What you're looking at</h3>
+    <p>These are throwaway design mockups — none of them touch the app yet. Each page renders the real
+    dashboard layout (toolbar, dual viewport, ROI legend, five-column info read-out, floating Function
+    panel) with a CSS/Canvas placeholder standing in for the live NiiVue brain render, so you can judge
+    each identity at genuine density.</p>
+    <p>Once you pick one, porting it is a stylesheet-level swap: the <code>:root</code> token block at the
+    top of the chosen file replaces the tokens in <code>viewer/src/style.css</code>, and the hardcoded
+    canvas colors in <code>viewer/src/ui/visualFieldPlot.ts</code> move to match. The class names in these
+    demos already mirror the app's real DOM. See <b>README.md</b> in this folder for the full rundown.</p>
+  </div>
+</div>
+</body>
+</html>

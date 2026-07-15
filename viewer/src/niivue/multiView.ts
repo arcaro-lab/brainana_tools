@@ -85,6 +85,10 @@ export class MultiView {
     // Never draw NiiVue's on-canvas mesh legend (hundreds of ARM labels = far too busy).
     this.render.opts.showLegend = false
     this.slices.opts.showLegend = false
+    // Crosshair tinted green (--ok #8bbf6e) rather than NiiVue's default red: legible against the
+    // warm/gold overlays and distinct from the gold surface marker.
+    this.slices.opts.crosshairColor = [0.545, 0.749, 0.431, 1]
+    this.render.opts.crosshairColor = [0.545, 0.749, 0.431, 1]
     registerColormaps(this.slices)
     registerColormaps(this.render)
 
