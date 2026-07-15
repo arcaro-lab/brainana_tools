@@ -31,7 +31,7 @@ const POLAR_MAX = Math.PI
 export function functionalModes(kind: FunctionalKind, frames: Record<string, number>): FunctionalMode[] {
   if (kind === 'retinotopy') {
     const modes: FunctionalMode[] = []
-    if (frames.polar != null) modes.push({ label: 'Polar angle', valueFrame: frames.polar, fFrame: frames.polarF ?? null, colormap: 'brainana_polar_angle', calMin: POLAR_MIN, calMax: POLAR_MAX })
+    if (frames.polar != null) modes.push({ label: 'Polar angle', valueFrame: frames.polar, fFrame: frames.polarF ?? null, colormap: 'brainana_polar_lr', calMin: POLAR_MIN, calMax: POLAR_MAX })
     if (frames.eccentricity != null) modes.push({ label: 'Eccentricity', valueFrame: frames.eccentricity, fFrame: frames.eccentricityF ?? null, colormap: 'brainana_eccentricity', calMin: -0.0394, calMax: 10 })
     return modes
   }
@@ -44,6 +44,19 @@ export function functionalModes(kind: FunctionalKind, frames: Record<string, num
 export interface Extrema {
   min: number
   max: number
+}
+
+// Remap a functional value for DISPLAY without hiding it: the user's display window [dMin, dMax]
+// is mapped onto the colormap's OPAQUE sub-range (calMin+step .. calMax), where step is one LUT
+// index. Values ≤ dMin land on the first opaque color (index 1, visible) and ≥ dMax on the last —
+// so narrowing the window changes contrast/color but never removes voxels. cal_min/cal_max stay
+// fixed at the map's natural range (index 0 stays reserved-transparent for masked voxels).
+export function mapFunctionalDisplay(val: number, dMin: number, dMax: number, calMin: number, calMax: number): number {
+  const step = (calMax - calMin) / 254 // one LUT index; keeps clamped-low values on index 1 (opaque)
+  const lo = calMin + step
+  const span = dMax - dMin
+  const t = span > 0 ? Math.max(0, Math.min(1, (val - dMin) / span)) : 0
+  return lo + t * (calMax - lo)
 }
 
 // Exact finite extrema of a frame, ignoring NaN/Infinity. Returns {0,0} when all non-finite.
@@ -123,6 +136,37 @@ const ECC_SURFACE_STOPS: ColorStop[] = [
   { t: 1.0, rgb: [0, 70, 255] },
 ]
 
+// Blend one channel toward white (brightness >= 1) or down (brightness < 1). Shared by the LUT
+// builders so surface shading tracks the same brightness control.
+function brightenChannel(channel: number, brightness: number): number {
+  return brightness >= 1
+    ? Math.min(255, Math.round(channel + (255 - channel) * (brightness - 1)))
+    : Math.max(0, Math.round(channel * brightness))
+}
+
+// Build the categorical surface LUT from an arbitrary colormap's flat RGBA LUT (as returned by
+// NiiVue's colormap(), length = entries·4). Bin 0 is reserved transparent; bins 1..255 sample the
+// colormap evenly at t=(bin-1)/254 so the SURFACE uses the SAME colors as the volume overlay + the
+// legend (this is what makes the colormap picker recolor the 3D surface, not just the slices).
+export function surfaceLutFromColormap(cmapRgba: ArrayLike<number>, brightness = 1): SurfaceLabelLut {
+  const rgba = new Uint8ClampedArray(256 * 4)
+  const labels = new Array<string>(256).fill('')
+  rgba.set([0, 0, 0, 0], 0) // bin 0 transparent (the surface's own masking slot)
+  const entries = Math.max(1, Math.floor(cmapRgba.length / 4))
+  // Skip a reserved transparent index-0 in the SOURCE colormap (brainana maps) so surface bin 1 is
+  // the first OPAQUE color, not the black masking slot — otherwise clamped-low vertices render black.
+  const srcLo = entries > 1 && cmapRgba[3] === 0 ? 1 : 0
+  for (let bin = 1; bin < 256; bin += 1) {
+    const t = (bin - 1) / 254
+    const src = (srcLo + Math.round(t * (entries - 1 - srcLo))) * 4
+    rgba.set(
+      [brightenChannel(cmapRgba[src], brightness), brightenChannel(cmapRgba[src + 1], brightness), brightenChannel(cmapRgba[src + 2], brightness), 255],
+      bin * 4,
+    )
+  }
+  return { lut: rgba, min: 0, max: 255, labels }
+}
+
 // Build the categorical surface LUT. `brightness` >= 1 blends channels toward white; < 1 scales
 // them down. Applied to the LUT ONLY — never to values, thresholds, or the volume overlay.
 // Somatotopy samples the eccentricity ramp reversed (body-position 0 = blue, 100 = red).
@@ -131,22 +175,20 @@ export function createFunctionalSurfaceLut(mode: SurfaceFunctionMode, brightness
   const labels = new Array<string>(256).fill('')
   rgba.set([0, 0, 0, 0], 0) // bin 0 transparent
   const stops = mode === 'polar' ? POLAR_SURFACE_STOPS : ECC_SURFACE_STOPS
-  const brighten = (channel: number): number =>
-    brightness >= 1
-      ? Math.min(255, Math.round(channel + (255 - channel) * (brightness - 1)))
-      : Math.max(0, Math.round(channel * brightness))
   for (let bin = 1; bin < 256; bin += 1) {
     const t = (bin - 1) / 254
     const colorT = mode === 'somatotopy' ? 1 - t : t
     const [r0, g0, b0] = interpolateRgb(stops, colorT)
-    rgba.set([brighten(r0), brighten(g0), brighten(b0), 255], bin * 4)
+    rgba.set([brightenChannel(r0, brightness), brightenChannel(g0, brightness), brightenChannel(b0, brightness), 255], bin * 4)
   }
   return { lut: rgba, min: 0, max: 255, labels }
 }
 
 // Map per-vertex values to LUT bin indices 1..255; sentinel / non-finite / <= -999 → bin 0.
-// Polar wraps to [0, 2π); eccentricity/somatotopy clamp to [0, max] (somato 100, else 10).
-export function quantizeFunctionalSurfaceValues(values: ArrayLike<number>, mode: SurfaceFunctionMode): Float32Array {
+// With no `range`: polar wraps to [0, 2π); eccentricity/somatotopy clamp to [0, max] (somato 100,
+// else 10). With a `range` (the display window): every mode quantizes LINEARLY over [min, max] and
+// clamps — matching the volume's display-range remap so the surface tracks the same contrast.
+export function quantizeFunctionalSurfaceValues(values: ArrayLike<number>, mode: SurfaceFunctionMode, range?: { min: number; max: number }): Float32Array {
   const bins = new Float32Array(values.length)
   for (let index = 0; index < values.length; index += 1) {
     const value = values[index]
@@ -155,7 +197,10 @@ export function quantizeFunctionalSurfaceValues(values: ArrayLike<number>, mode:
       continue
     }
     let t: number
-    if (mode === 'polar') {
+    if (range) {
+      const span = range.max - range.min
+      t = span > 0 ? Math.max(0, Math.min(1, (value - range.min) / span)) : 0
+    } else if (mode === 'polar') {
       const wrapped = (((value + Math.PI) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)
       t = wrapped / (2 * Math.PI)
     } else {
@@ -165,6 +210,19 @@ export function quantizeFunctionalSurfaceValues(values: ArrayLike<number>, mode:
     bins[index] = 1 + Math.min(254, Math.max(0, Math.round(t * 254)))
   }
   return bins
+}
+
+// Value-clip on the surface: keep a vertex's bin only when its value is inside the inclusive
+// [lo, hi] window (null bound = unbounded); otherwise force bin 0 (transparent). Mirrors the
+// volume value-clip so the same voxels/vertices disappear together.
+export function maskSurfaceBinsByValue(bins: Float32Array, values: ArrayLike<number>, lo: number | null, hi: number | null): Float32Array {
+  const out = new Float32Array(bins.length)
+  for (let i = 0; i < bins.length; i++) {
+    const v = values[i]
+    const keep = Number.isFinite(v) && (lo === null || v >= lo) && (hi === null || v <= hi)
+    out[i] = keep ? bins[i] : 0
+  }
+  return out
 }
 
 // Apply the F-threshold on the surface: for each vertex, keep the quantized bin only where the

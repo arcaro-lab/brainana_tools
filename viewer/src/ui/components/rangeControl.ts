@@ -46,40 +46,60 @@ export function createRangeControl(opts: RangeControlOptions): RangeControl {
   const minVal = h('span', { class: 'range-num muted' }, ['—'])
   const maxVal = h('span', { class: 'range-num muted' }, ['—'])
 
-  const commit = (): void => {
+  let domainMin = 0
+  let domainMax = 1
+  let step = 0.001
+  // Symmetric mode needs symmetric slider bounds, else −mag can fall outside an asymmetric domain
+  // and the min handle clamps to the left edge (looking stuck). Widen the bounds to ±max(|lo|,|hi|).
+  const applyBounds = (): void => {
+    let lo = domainMin
+    let hi = domainMax
+    if (symmetric) {
+      const b = Math.max(Math.abs(domainMin), Math.abs(domainMax))
+      lo = -b
+      hi = b
+    }
+    for (const inp of [minInput, maxInput]) {
+      inp.min = String(lo)
+      inp.max = String(hi)
+      inp.step = String(step)
+    }
+  }
+
+  // `source` = the handle the user moved; in symmetric mode its magnitude drives BOTH handles, so
+  // either slider can shrink/grow the range (previously the larger magnitude always won → min stuck).
+  const commit = (source: 'min' | 'max'): void => {
     let lo = Number(minInput.value)
     let hi = Number(maxInput.value)
     if (symmetric) {
-      const mag = Math.max(Math.abs(lo), Math.abs(hi))
+      const mag = Math.abs(source === 'min' ? lo : hi)
       lo = -mag
       hi = mag
       minInput.value = String(lo)
       maxInput.value = String(hi)
     } else if (lo > hi) {
-      lo = hi
+      if (source === 'min') hi = lo
+      else lo = hi
       minInput.value = String(lo)
+      maxInput.value = String(hi)
     }
     minVal.textContent = fmt(lo)
     maxVal.textContent = fmt(hi)
     opts.onChange({ min: lo, max: hi })
   }
-  minInput.addEventListener('input', commit)
-  maxInput.addEventListener('input', commit)
+  minInput.addEventListener('input', () => commit('min'))
+  maxInput.addEventListener('input', () => commit('max'))
 
   const actions: Array<Node> = []
-  if (opts.onAuto) {
-    const autoBtn = h('button', { type: 'button', class: 'chip' }, [opts.autoLabel ?? 'Auto']) as HTMLButtonElement
-    autoBtn.addEventListener('click', () => opts.onAuto?.())
-    actions.push(autoBtn)
-  }
   let symChip: HTMLButtonElement | null = null
   if (opts.onSymmetric || opts.symmetric !== undefined) {
-    symChip = h('button', { type: 'button', class: `chip${symmetric ? ' active' : ''}` }, ['Symmetric']) as HTMLButtonElement
+    symChip = h('button', { type: 'button', class: `chip${symmetric ? ' active' : ''}` }, ['symmetric']) as HTMLButtonElement
     symChip.addEventListener('click', () => {
       symmetric = !symmetric
       symChip!.classList.toggle('active', symmetric)
+      applyBounds() // symmetric bounds so the mirrored handles fit
       opts.onSymmetric?.(symmetric)
-      if (symmetric) commit()
+      if (symmetric) commit('max')
     })
     actions.push(symChip)
   }
@@ -95,13 +115,11 @@ export function createRangeControl(opts: RangeControlOptions): RangeControl {
 
   return {
     element,
-    setDomain: (min, max, step) => {
-      const st = step ?? ((max - min) / 500 || 0.001)
-      for (const inp of [minInput, maxInput]) {
-        inp.min = String(min)
-        inp.max = String(max)
-        inp.step = String(st)
-      }
+    setDomain: (min, max, st) => {
+      domainMin = min
+      domainMax = max
+      step = st ?? ((max - min) / 500 || 0.001)
+      applyBounds()
     },
     setValue: (min, max) => {
       minInput.value = String(min)
@@ -113,6 +131,7 @@ export function createRangeControl(opts: RangeControlOptions): RangeControl {
     setSymmetric: (on) => {
       symmetric = on
       symChip?.classList.toggle('active', on)
+      applyBounds()
     },
     setDisabled: (disabled) => {
       minInput.disabled = disabled

@@ -51,8 +51,18 @@ export const ECCENTRICITY_STOPS: RGB[] = [
 // Somatotopy = eccentricity reversed → blue at 0, red at 100.
 export const SOMATOTOPY_STOPS: RGB[] = [...ECCENTRICITY_STOPS].reverse()
 
-// Polar-angle wheel: cyclic hue, starting at green.
+// Polar-angle wheel: cyclic hue, starting at green (the smooth rainbow — the default).
 export const POLAR_STOPS: RGB[] = Array.from({ length: 17 }, (_, k) => hslToRgb((120 + k * 22.5) % 360, 0.85, 0.5))
+
+// Alternative polar map that SEPARATES the left/right visual hemifields (green at both meridians,
+// blue on one side, red on the other) — the previous surface look, kept as a selectable option.
+export const POLAR_LR_STOPS: RGB[] = [
+  [0, 255, 0],
+  [0, 0, 255],
+  [0, 255, 0],
+  [255, 0, 0],
+  [0, 255, 0],
+]
 
 // Binary curvature: light gray for concave (sulci), dark gray for convex (gyri).
 export const CURVATURE_BINARY: NiiColormap = {
@@ -67,6 +77,7 @@ export const COLORMAPS: Record<string, NiiColormap> = {
   brainana_eccentricity: buildColormap(ECCENTRICITY_STOPS),
   brainana_somatotopy: buildColormap(SOMATOTOPY_STOPS),
   brainana_polar_angle: buildColormap(POLAR_STOPS),
+  brainana_polar_lr: buildColormap(POLAR_LR_STOPS),
   brainana_curvature: CURVATURE_BINARY,
 }
 
@@ -84,16 +95,42 @@ export function registerColormaps(nv: Niivue): void {
 // each map's LUT from NiiVue (custom maps are already registered by registerColormaps). Preview
 // only — a failed lookup falls back to a neutral gray so the picker never breaks.
 export function buildColormapGradients(nv: Niivue, keys: string[]): Record<string, string> {
-  const out: Record<string, string> = {}
+  return buildColormapAssets(nv, keys).gradients
+}
+
+// Sample each colormap's flat RGBA LUT once and derive both the CSS gradient preview and the raw
+// LUT (kept for the legend wheel/rings + the surface categorical LUT, which need actual colors).
+export interface ColormapAssets {
+  gradients: Record<string, string>
+  luts: Record<string, Uint8ClampedArray>
+}
+export function buildColormapAssets(nv: Niivue, keys: string[]): ColormapAssets {
+  const gradients: Record<string, string> = {}
+  const luts: Record<string, Uint8ClampedArray> = {}
   for (const key of keys) {
     try {
       const rgba = (nv as unknown as { colormap: (id: string) => ArrayLike<number> }).colormap(key)
-      out[key] = rgba && rgba.length >= 4 ? gradientFromRgba(rgba) : GRAY_GRADIENT
+      if (rgba && rgba.length >= 4) {
+        luts[key] = rgba instanceof Uint8ClampedArray ? rgba : Uint8ClampedArray.from(rgba as ArrayLike<number>)
+        gradients[key] = gradientFromRgba(rgba)
+      } else {
+        gradients[key] = GRAY_GRADIENT
+      }
     } catch {
-      out[key] = GRAY_GRADIENT
+      gradients[key] = GRAY_GRADIENT
     }
   }
-  return out
+  return { gradients, luts }
+}
+
+// All colormap names NiiVue offers (built-ins + any custom maps registered on this instance).
+export function availableColormaps(nv: Niivue): string[] {
+  try {
+    const names = (nv as unknown as { colormaps: () => string[] }).colormaps()
+    return Array.isArray(names) ? names : []
+  } catch {
+    return []
+  }
 }
 
 const GRAY_GRADIENT = 'linear-gradient(90deg, rgb(20,18,13), rgb(236,230,216))'

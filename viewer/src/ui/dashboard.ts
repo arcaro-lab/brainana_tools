@@ -13,7 +13,7 @@ import { OrientationGizmo } from '../niivue/orientation.ts'
 import { createViewerStore, type Layout } from '../state/store.ts'
 import { parseAtlasTsv, buildLabelColortable, type AtlasLabel } from '../data/atlas.ts'
 import { ARM_SEED, D99_SEED } from '../data/colors.ts'
-import { finiteExtrema, createFunctionalSurfaceLut, quantizeFunctionalSurfaceValues, maskSurfaceBinsByF, type SurfaceFunctionMode } from '../data/functional.ts'
+import { finiteExtrema, createFunctionalSurfaceLut, quantizeFunctionalSurfaceValues, maskSurfaceBinsByF, maskSurfaceBinsByValue, type SurfaceFunctionMode } from '../data/functional.ts'
 import { visualXY, visualFieldStats, ECC_MAX, type VfPoint } from '../data/visualField.ts'
 import { parseGiftiFloat32 } from '../data/gifti.ts'
 import { RoiLegend } from './roiLegend.ts'
@@ -23,8 +23,10 @@ import { createMorphologyPanel, type MorphologyPanel, type MarkerMode } from './
 import { drawVisualField } from './visualFieldPlot.ts'
 import { h, errorText } from './dom.ts'
 import { mountSourcesDialog } from './dialogs/sources.ts'
-import { buildColormapGradients } from '../niivue/colormaps.ts'
-import { COLORMAP_REGISTRY } from '../data/colormap.ts'
+import { buildColormapAssets, availableColormaps } from '../niivue/colormaps.ts'
+import { buildColormapRegistry, type ColormapInfo } from '../data/colormap.ts'
+import { surfaceLutFromColormap } from '../data/functional.ts'
+import { createColorDisplay, type ColorDisplay } from './components/colorDisplay.ts'
 
 const FALLBACK_GRADIENT = 'linear-gradient(90deg, rgb(20,18,13), rgb(236,230,216))'
 
@@ -143,12 +145,9 @@ const MORPH_DEFAULT_RANGE: Record<MorphologyMetric, { min: number; max: number }
   sulc: { min: -3, max: 3 },
   thickness: { min: 1, max: 3 },
 }
-// Caption shown in the morphology content slot; morphology is always the base surface shading.
-function morphBaseCaption(m: MorphologyDisplayMetric): string {
-  if (m === 'none') return 'No shading (flat base).'
-  const label = m === 'curvature' ? 'Curvature' : m === 'sulc' ? 'Sulcal depth' : 'Cortical thickness'
-  return `${label} (base layer).`
-}
+// Default continuous colormap + symmetric-range preference per metric (used by Reset).
+const MORPH_DEFAULT_COLORMAP: Record<MorphologyMetric, string> = { curvature: 'gray', sulc: 'blue2red', thickness: 'viridis' }
+const MORPH_DEFAULT_SYMMETRIC: Record<MorphologyMetric, boolean> = { curvature: true, sulc: true, thickness: false }
 
 export function mountDashboard(root: HTMLElement, deps: Deps): void {
   const { client, files, sources } = deps
@@ -171,9 +170,9 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
   const neighborhoodSelect = h(
     'select',
     { class: 'sm' },
-    ['1', '3', '5', '7'].map((n) => h('option', { value: n }, [`${n} × ${n} × ${n}`])),
+    ['0', '1', '2', '3'].map((n) => h('option', { value: n }, [n])),
   ) as HTMLSelectElement
-  neighborhoodSelect.value = '3'
+  neighborhoodSelect.value = '1'
 
   const layoutBtns = LAYOUTS.map((l) => {
     const b = h('button', { type: 'button', class: 'layout-btn', title: l.title }, [l.glyph])
@@ -187,14 +186,18 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
     return b
   })
 
-  // Two-row × four-column grid (fills column-by-column via grid-auto-flow: column).
+  // Two-row × four-column grid (fills column-by-column via grid-auto-flow: column). Full-height
+  // hairline dividers (`tb-divide`, each spanning both rows) separate the logical clusters.
+  const tbDivide = (): HTMLElement => h('div', { class: 'tb-divide' })
   const toolbar = h('header', { class: 'toolbar' }, [
     // col 1: title (row 1) · version (row 2)
     h('div', { class: 'tb-cell brand' }, ['Brainana Viewer']),
     h('div', { class: 'tb-cell' }, [h('span', { class: 'badge' }, [`v${'0.1.0'}`])]),
+    tbDivide(),
     // col 2: Dataset (row 1) · Monkey (row 2)
     h('div', { class: 'tb-cell' }, [datasetBtn]),
     h('div', { class: 'tb-cell' }, [h('label', { class: 'tb-field' }, ['Monkey', monkeySelect])]),
+    tbDivide(),
     // col 3: vol + layout icons (row 1) · surf + LH/RH + view presets (row 2)
     h('div', { class: 'tb-cell' }, [h('label', { class: 'tb-field inline' }, [volCheck, h('span', {}, ['vol']), volSelect]), h('div', { class: 'montage' }, layoutBtns)]),
     h('div', { class: 'tb-cell' }, [
@@ -203,6 +206,7 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
       h('label', { class: 'tb-field inline' }, [rhCheck, h('span', {}, ['RH'])]),
       h('div', { class: 'views' }, viewBtns),
     ]),
+    tbDivide(),
     // col 4: category tabs (row 1); row 2 reserved for future Import/Export controls.
     h('div', { class: 'tb-cell panels' }, panelBtns),
     h('div', { class: 'tb-cell' }, []),
@@ -223,28 +227,33 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
   // function / morphology. Exactly one content slot is visible at a time (driven by `updateTabUI`).
   const sidePicker = h('div', { class: 'side-picker' })
   const legendSlot = h('div', { class: 'side-slot', hidden: true })
-  const funcCaption = h('div', { class: 'side-caption muted' }, ['Select a function map.'])
-  const funcSlot = h('div', { class: 'side-slot', hidden: true }, [funcCaption])
-  const morphCaption = h('div', { class: 'side-caption muted' }, ['Curvature (base layer).'])
-  const morphSlot = h('div', { class: 'side-slot', hidden: true }, [morphCaption])
+  // Function/morphology side-content slots carry no caption — the active selection is already shown
+  // by the highlighted chip in the docked panel above, so a descriptive caption is redundant.
+  const funcSlot = h('div', { class: 'side-slot', hidden: true })
+  const morphSlot = h('div', { class: 'side-slot', hidden: true })
   const sidePlaceholder = h('div', { class: 'legend-title muted' }, ['Select Atlases, Morphology, or Function above.'])
   const sideContent = h('div', { class: 'side-content' }, [legendSlot, funcSlot, morphSlot, sidePlaceholder])
-  const atlasLegend = h('aside', { class: 'atlas-legend' }, [sidePicker, sideContent])
+  // Docked at the bottom of the side panel: the shared "Color display" section (colormap + legend +
+  // display range + clip), mounted once the view/colormaps exist. Applies to the active overlay.
+  const colorDock = h('div', { class: 'color-dock' })
+  const atlasLegend = h('aside', { class: 'atlas-legend' }, [sidePicker, sideContent, colorDock])
   const infoPanel = h('section', { class: 'info-panel' }, [
     h('div', { class: 'info-col' }, [h('h3', {}, ['Coordinates']), h('div', { id: 'report-coordinates', class: 'muted' }, ['—'])]),
     h('div', { class: 'info-col' }, [h('h3', {}, ['Anatomy']), h('div', { id: 'report-anatomy', class: 'muted' }, ['—'])]),
     h('div', { class: 'info-col' }, [h('h3', {}, ['Surface']), h('div', { id: 'report-surface', class: 'muted' }, ['—'])]),
     h('div', { class: 'info-col' }, [h('h3', {}, ['Function']), h('div', { id: 'report-function', class: 'muted' }, ['—'])]),
     h('div', { class: 'info-col' }, [
-      h('h3', {}, ['Visual field']),
-      h('label', { class: 'neighborhood-control' }, [h('span', {}, ['Neighborhood']), neighborhoodSelect]),
+      h('div', { class: 'vf-header' }, [
+        h('h3', {}, ['Visual field']),
+        h('label', { class: 'neighborhood-control' }, [h('span', {}, ['Neighborhood']), neighborhoodSelect]),
+      ]),
       h('canvas', { id: 'visual-field-canvas', class: 'vf-canvas' }),
       h('div', { id: 'report-visual-note', class: 'muted' }, ['Select a retinotopy map.']),
     ]),
   ])
-  const placeholderText = h('p', { class: 'placeholder-text' }, ['Select a dataset and a monkey to begin.'])
+  const placeholderText = h('p', { class: 'placeholder-text' }, ['Select a dataset and then a monkey to begin'])
   const asciiEl = h('pre', { class: 'monkey-ascii' }, [BRAINANA_ASCII_LOGO])
-  const placeholderContent = h('div', { class: 'placeholder-content' }, [placeholderText, asciiEl])
+  const placeholderContent = h('div', { class: 'placeholder-content' }, [asciiEl, placeholderText])
   const placeholder = h('div', { class: 'monkey-placeholder' }, [placeholderContent])
   {
     const fitAsciiLogo = (): void => {
@@ -402,7 +411,10 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
   function applyHidden(hidden: Set<number>): void {
     if (!view || atlasEntries.length === 0) return
     atlasHidden = hidden
-    view.setAtlasColortable(buildLabelColortable(atlasEntries, { seed: atlasSeed, hidden })) // slices volume (keeps negatives)
+    // A continuous atlas colormap (if forced via the picker) stays on the volume; otherwise the
+    // categorical label table renders (respecting hidden ROIs). The surface stays categorical.
+    if (atlasColormap) view.setAtlasColormap(atlasColormap)
+    else view.setAtlasColortable(buildLabelColortable(atlasEntries, { seed: atlasSeed, hidden })) // slices volume (keeps negatives)
     void view.updateSurfaceOverlayTable(buildLabelColortable(atlasEntries, { seed: atlasSeed, hidden, clipNegative: true })) // surface
   }
 
@@ -423,6 +435,7 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
   const selectAtlas = async (sel: AtlasSelection | null): Promise<void> => {
     if (!view || !manifest) return
     const token = ++atlasToken // latest-wins guard against rapid atlas switches
+    atlasColormap = null // a new atlas selection starts categorical
     atlasPanel?.setActive(sel)
     if (!sel) {
       view.removeAtlas()
@@ -432,6 +445,7 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
       atlasHidden = new Set()
       await applyOverlay() // drop the atlas surface layer in place (no reload)
       setStatus(manifest.label)
+      refreshColorDisplay()
       return
     }
     const entry = sel.atlas === 'D99' ? manifest.atlases.d99 : manifest.atlases.charm[String(sel.level)]
@@ -458,6 +472,7 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
       atlasSurfacePair = entry.surface ?? null
       await applyOverlay() // swap the overlay layer in place (no base-surface reload)
       setStatus(title)
+      refreshColorDisplay()
     } catch (err) {
       setStatus(errorText(err))
     }
@@ -543,12 +558,24 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
   let funcOpacity = 0.85
   let funcBrightness = 1.25
   let funcToken = 0
-  // Colormap override (null = the active map's default) and value-clip window (null = unbounded).
+  // Colormap override (null = the active map's default), display range (cal clamp; defaults to the
+  // map's mode range), and value-clip window (null = unbounded).
   let funcColormap: string | null = null
+  let funcCalMin = 0
+  let funcCalMax = 1
   let funcClipLo: number | null = null
   let funcClipHi: number | null = null
-  // Memoized CSS gradient previews per colormap key (subject-independent; built once view exists).
+  // Colormap assets (gradient previews + raw LUTs) + registry, built once the view exists.
   let colormapGradients: Record<string, string> = {}
+  let colormapLuts: Record<string, Uint8ClampedArray> = {}
+  let colormapInfos: ColormapInfo[] = []
+  // The unified bottom "Color display" section + which overlay it currently targets.
+  let colorDisplay: ColorDisplay | null = null
+  type ColorTarget = 'morphology' | 'function' | 'atlas' | null
+  // Atlas overlay colormap: null = the categorical label table; a key = a continuous colormap forced
+  // onto the atlas volume. The synthetic 'labels' picker entry restores the categorical table.
+  let atlasColormap: string | null = null
+  const LABELS_KEY = 'labels'
   // Per-hemisphere parsed frames of the currently loaded function surface .func.gii, cached so a
   // threshold/brightness drag re-quantizes in place without re-fetching (keyed by choice.kind).
   let funcSurfaceFrames: { kind: string; left: Float32Array[]; right: Float32Array[] } | null = null
@@ -595,11 +622,17 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
     }
     const mode = surfaceModeFor(funcChoice)
     const { valueFrame, fFrame } = funcChoice.mode
-    const lut = createFunctionalSurfaceLut(mode, funcBrightness).lut
+    // Build the surface LUT from the ACTIVE colormap so the picker recolors the surface too. Prefer
+    // the prebuilt asset, fall back to a live LUT lookup, and only then to the built-in retinotopy ramp.
+    const cmapLut = colormapLuts[funcColormapKey()] ?? view.colormapLut(funcColormapKey())
+    const lut = cmapLut ? surfaceLutFromColormap(cmapLut, funcBrightness).lut : createFunctionalSurfaceLut(mode, funcBrightness).lut
+    // Quantize over the map's natural domain (display range isn't exposed for function overlays),
+    // then mask by both the F-threshold and the value clip (so clip hides the same vertices as voxels).
     const binsFor = (frames: Float32Array[]): Float32Array => {
       const value = frames[valueFrame] ?? new Float32Array(0)
       let bins = quantizeFunctionalSurfaceValues(value, mode)
       if (fFrame != null && frames[fFrame]) bins = maskSurfaceBinsByF(bins, frames[fFrame], funcThreshold)
+      if (funcClipLo != null || funcClipHi != null) bins = maskSurfaceBinsByValue(bins, value, funcClipLo, funcClipHi)
       return bins
     }
     await view.setFunctionSurface(funcChoice.kind, pair, binsFor(funcSurfaceFrames.left), binsFor(funcSurfaceFrames.right), lut, funcOpacity)
@@ -625,23 +658,17 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
       // Single dl keeps every label:value pair aligned; the last three ids are filled by
       // updateVisualField from the sampled neighborhood (kept in sync via the crosshair order).
       const dl = h('dl', { class: 'dl-paired' })
-      const row = (label: string, value: string, id?: string): void => {
-        dl.append(h('dt', {}, [label]), h('dd', { class: 'dl-span', ...(id ? { id } : {}) }, [value]))
-      }
       const rowPaired = (label1: string, val1: string, label2: string, val2: string): void => {
         dl.append(h('dt', {}, [label1]), h('dd', {}, [val1]), h('dt', {}, [label2]), h('dd', {}, [val2]))
       }
       rowPaired('polar angle (rad)', num(polar), 'F', num(view.sampleFunctionFrame(vox, f.polarF)))
       rowPaired('eccentricity (°)', num(ecc), 'F', num(view.sampleFunctionFrame(vox, f.eccentricityF)))
       rowPaired('visual X (°)', num(vx), 'visual Y (°)', num(vy))
-      row('valid voxels', '—', 'func-valid')
-      row('offset to median (°)', '—', 'func-offset')
-      row('local spread (°)', '—', 'func-spread')
-      el.append(h('h3', { class: 'func-subheading' }, ['Retinotopy']), dl)
+      dl.append(h('dt', {}, ['valid voxels']), h('dd', { id: 'func-valid' }, ['—']), h('dt', {}, ['local spread (°)']), h('dd', { id: 'func-spread' }, ['—']))
+      el.append(dl)
     } else {
       const fstat = view.sampleFunctionFrame(vox, f.fstat)
       el.append(
-        h('h3', { class: 'func-subheading' }, ['Somatotopy']),
         dlRows([
           ['body position', num(view.sampleFunctionFrame(vox, f.phase))],
           ['somatotopy F', num(fstat)],
@@ -664,7 +691,7 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
     const dims = view.functionDims()
     const f = manifest.function.retinotopy!.frames
     if (!vox || !dims) return
-    const s = Math.floor(Number(neighborhoodSelect.value) / 2)
+    const s = Number(neighborhoodSelect.value)
     const points: VfPoint[] = []
     let possible = 0 // in-bounds neighborhood voxels considered (denominator of "valid voxels")
     for (let dx = -s; dx <= s; dx++)
@@ -689,7 +716,6 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
       if (d) d.textContent = text
     }
     setDd('func-valid', `${points.length} / ${possible}`)
-    setDd('func-offset', points.length && stats.offset != null ? stats.offset.toFixed(2) : 'N/A')
     setDd('func-spread', points.length ? stats.spread.toFixed(2) : 'N/A')
     if (note) note.textContent = points.length ? '' : 'No valid retinotopic voxel here.'
   }
@@ -697,24 +723,12 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
   // Active volume colormap for the function overlay: the user override, else the map's default.
   const funcColormapKey = (): string => funcColormap ?? funcChoice?.mode.colormap ?? 'gray'
 
-  const updateFuncColorbar = (): void => {
-    if (!funcChoice) {
-      functionPanel?.setColorbar(null)
-      return
-    }
-    functionPanel?.setColorbar({
-      gradient: colormapGradients[funcColormapKey()] ?? FALLBACK_GRADIENT,
-      min: funcChoice.mode.calMin,
-      max: funcChoice.mode.calMax,
-      clipLow: funcClipLo,
-      clipHigh: funcClipHi,
-    })
-  }
-
   const applyFunctionNow = (): void => {
     if (view && funcChoice) {
-      view.applyFunctional(funcChoice.mode.valueFrame, funcChoice.mode.fFrame, funcThreshold, funcColormapKey(), funcOpacity, funcChoice.mode.calMin, funcChoice.mode.calMax, funcClipLo, funcClipHi)
-      updateFuncColorbar()
+      // Fixed cal range = the map's natural range (keeps index-0 transparent for masking); the user
+      // display range (funcCalMin/Max) is applied as a color remap so it clamps instead of hiding.
+      view.applyFunctional(funcChoice.mode.valueFrame, funcChoice.mode.fFrame, funcThreshold, funcColormapKey(), funcOpacity, funcChoice.mode.calMin, funcChoice.mode.calMax, funcCalMin, funcCalMax, funcClipLo, funcClipHi)
+      refreshColorDisplay()
     }
   }
 
@@ -723,20 +737,20 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
     const token = ++funcToken
     funcChoice = choice
     funcSurfaceFrames = null // invalidate the cached surface frames for the previous choice
-    // Reset per-map display overrides: use the map's default colormap and clip nothing.
+    // Reset per-map display overrides: default colormap, display range = the map's natural range,
+    // clip nothing.
     funcColormap = null
     funcClipLo = null
     funcClipHi = null
-    functionPanel?.setActive(choice ? choiceKey(choice) : null)
     if (choice) {
-      functionPanel?.setColormap(choice.mode.colormap)
-      functionPanel?.setClipDomain(choice.mode.calMin, choice.mode.calMax)
+      funcCalMin = choice.mode.calMin
+      funcCalMax = choice.mode.calMax
     }
-    funcCaption.textContent = choice ? `${choice.kind === 'retinotopy' ? 'Retinotopy' : 'Somatotopy'} · ${choice.mode.label}` : 'Select a function map.'
+    functionPanel?.setActive(choice ? choiceKey(choice) : null)
     if (!choice) {
       view.removeFunctional()
       view.clearSurfaceFunctionLayers()
-      functionPanel?.setColorbar(null)
+      refreshColorDisplay()
       updateFunctionReport()
       updateVisualField()
       return
@@ -800,25 +814,171 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
   let lastMm: [number, number, number] | null = null
   const morphShape: { curvature?: [Float32Array, Float32Array]; sulc?: [Float32Array, Float32Array]; thickness?: [Float32Array, Float32Array] } = {}
 
-  // Push the active metric's colour range into the morphology panel. The range group is hidden
-  // for None and for binary curvature (forced ±1).
-  const syncMorphRange = (): void => {
-    const metric: MorphologyMetric = morphMetric === 'none' ? 'curvature' : morphMetric
-    const hidden = morphMetric === 'none' || (morphMetric === 'curvature' && morphStyle === 'binary')
-    morphPanel?.setRange({ domainMin: MORPH_DOMAIN[metric].min, domainMax: MORPH_DOMAIN[metric].max, min: morphRanges[metric].min, max: morphRanges[metric].max, metric, hidden, symmetric: morphSymmetric[metric] })
-    // Colormap picker + colorbar track the active continuous metric (hidden for None / binary curvature).
-    morphPanel?.setColormapVisible(!hidden)
-    if (!hidden) {
-      const key = morphColormaps[metric] ?? 'gray'
-      morphPanel?.setColormap(key)
-      morphPanel?.setColorbar({
+  // --- unified "Color display" section routing (colormap + legend + display range + clip) ---
+  const morphActiveMetric = (): MorphologyMetric => (morphMetric === 'none' ? 'curvature' : morphMetric)
+  // Morphology has color controls only for continuous shading (None + binary curvature are fixed).
+  const morphColorable = (): boolean => morphMetric !== 'none' && !(morphMetric === 'curvature' && morphStyle === 'binary')
+
+  // Which overlay the bottom color-display section targets, following the docked tab + selection.
+  const colorTarget = (): ColorTarget => {
+    if (dockedTab === 'function' && funcChoice) return 'function'
+    if (dockedTab === 'morphology' && morphColorable()) return 'morphology'
+    if (dockedTab === 'atlas' && atlasEntries.length > 0) return 'atlas'
+    return null
+  }
+
+  // Retinotopy legends are circular: polar angle → wheel, eccentricity → concentric rings.
+  const legendShapeForFunc = (): 'bar' | 'wheel' | 'rings' => {
+    if (!funcChoice || funcChoice.kind !== 'retinotopy') return 'bar'
+    return funcChoice.mode.label === 'Polar angle' ? 'wheel' : funcChoice.mode.label === 'Eccentricity' ? 'rings' : 'bar'
+  }
+
+  const refreshColorDisplay = (): void => {
+    if (!colorDisplay) return
+    const target = colorTarget()
+    if (target === 'function' && funcChoice) {
+      const key = funcColormapKey()
+      colorDisplay.setTarget({
+        title: `${funcChoice.kind === 'retinotopy' ? 'Retinotopy' : 'Somatotopy'} · ${funcChoice.mode.label}`,
+        colormap: key,
+        legendShape: legendShapeForFunc(),
         gradient: colormapGradients[key] ?? FALLBACK_GRADIENT,
-        min: morphRanges[metric].min,
-        max: morphRanges[metric].max,
-        clipLow: morphTransparentBelowMin ? morphRanges[metric].min : null,
-        clipHigh: null,
+        lut: colormapLuts[key],
+        // Display range isn't meaningful for the fixed-domain retinotopy/somatotopy maps — only
+        // colormap, legend, and clip are exposed for function overlays.
+        displayDomain: { min: funcChoice.mode.calMin, max: funcChoice.mode.calMax },
+        displayRange: { min: funcCalMin, max: funcCalMax },
+        showDisplayRange: false,
+        clip: 'range',
+        clipDomain: { min: funcChoice.mode.calMin, max: funcChoice.mode.calMax },
+        clipValue: { lo: funcClipLo, hi: funcClipHi },
       })
+    } else if (target === 'morphology') {
+      const metric = morphActiveMetric()
+      const key = morphColormaps[metric] ?? 'gray'
+      colorDisplay.setTarget({
+        title: `Morphology · ${metric}`,
+        colormap: key,
+        legendShape: 'bar',
+        gradient: colormapGradients[key] ?? FALLBACK_GRADIENT,
+        lut: colormapLuts[key],
+        displayDomain: MORPH_DOMAIN[metric],
+        displayRange: morphRanges[metric],
+        displaySymmetric: morphSymmetric[metric],
+        clip: 'toggle',
+        hideBelowMin: morphTransparentBelowMin,
+      })
+    } else if (target === 'atlas' && lastAtlasSel) {
+      // Atlas is categorical by default; the picker can force a continuous colormap onto the volume.
+      const key = atlasColormap ?? LABELS_KEY
+      colorDisplay.setTarget({
+        title: `Atlas · ${lastAtlasSel.atlas}${lastAtlasSel.level ? lastAtlasSel.level : ''}`,
+        colormap: key,
+        legendShape: 'bar',
+        gradient: colormapGradients[key] ?? FALLBACK_GRADIENT,
+        lut: colormapLuts[key],
+        displayDomain: { min: 0, max: 1 },
+        displayRange: { min: 0, max: 1 },
+        showDisplayRange: false,
+        clip: 'none',
+      })
+    } else {
+      colorDisplay.setTarget(null)
     }
+  }
+
+  // Route the section's controls to whichever overlay is active.
+  const colorDisplayCallbacks = {
+    onColormap: (key: string): void => {
+      const t = colorTarget()
+      if (key === LABELS_KEY && t !== 'atlas') return // "Labels" only means anything for the atlas
+      if (t === 'function') {
+        funcColormap = key
+        applyFunctionNow()
+        void applyFunctionSurface()
+      } else if (t === 'morphology') {
+        morphColormaps[morphActiveMetric()] = key
+        view?.applyMorphologyDisplay(morphDisplay())
+        refreshColorDisplay()
+      } else if (t === 'atlas') {
+        if (key === LABELS_KEY) {
+          atlasColormap = null
+          applyHidden(atlasHidden) // restore the categorical label table on the volume
+        } else {
+          atlasColormap = key
+          view?.setAtlasColormap(key)
+        }
+        refreshColorDisplay()
+      }
+    },
+    onDisplayRange: (min: number, max: number): void => {
+      const t = colorTarget()
+      if (t === 'function') {
+        funcCalMin = min
+        funcCalMax = max
+        applyFunctionNow()
+        void applyFunctionSurface() // range recolors the surface too
+      } else if (t === 'morphology') {
+        morphRanges[morphActiveMetric()] = { min, max }
+        view?.applyMorphologyDisplay(morphDisplay())
+        refreshColorDisplay()
+      }
+    },
+    onDisplaySymmetric: (on: boolean): void => {
+      if (colorTarget() === 'morphology') morphSymmetric[morphActiveMetric()] = on
+    },
+    onDisplayAuto: (): void => {
+      const t = colorTarget()
+      if (t === 'morphology') {
+        const m = morphActiveMetric()
+        morphRanges[m] = autoMorphRange(m)
+        view?.applyMorphologyDisplay(morphDisplay())
+        refreshColorDisplay()
+      } else if (t === 'function' && funcChoice) {
+        funcCalMin = funcChoice.mode.calMin
+        funcCalMax = funcChoice.mode.calMax
+        applyFunctionNow()
+      }
+    },
+    onClipRange: (lo: number | null, hi: number | null): void => {
+      if (colorTarget() === 'function') {
+        funcClipLo = lo
+        funcClipHi = hi
+        applyFunctionNow()
+        void applyFunctionSurface() // clip hides the same vertices on the surface
+      }
+    },
+    onHideBelowMin: (on: boolean): void => {
+      if (colorTarget() === 'morphology') {
+        morphTransparentBelowMin = on
+        view?.applyMorphologyDisplay(morphDisplay())
+        refreshColorDisplay()
+      }
+    },
+    onReset: (): void => {
+      const t = colorTarget()
+      if (t === 'function' && funcChoice) {
+        funcColormap = null
+        funcCalMin = funcChoice.mode.calMin
+        funcCalMax = funcChoice.mode.calMax
+        funcClipLo = null
+        funcClipHi = null
+        applyFunctionNow()
+        void applyFunctionSurface()
+      } else if (t === 'morphology') {
+        const m = morphActiveMetric()
+        morphColormaps[m] = MORPH_DEFAULT_COLORMAP[m]
+        morphRanges[m] = { ...MORPH_DEFAULT_RANGE[m] }
+        morphSymmetric[m] = MORPH_DEFAULT_SYMMETRIC[m]
+        morphTransparentBelowMin = false
+        view?.applyMorphologyDisplay(morphDisplay())
+        refreshColorDisplay()
+      } else if (t === 'atlas') {
+        atlasColormap = null
+        applyHidden(atlasHidden)
+        refreshColorDisplay()
+      }
+    },
   }
 
   // 2.5–97.5 percentile of the loaded .shape.gii data across both hemispheres (thickness ignores
@@ -907,6 +1067,7 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
     funcSlot.hidden = dockedTab !== 'function'
     morphSlot.hidden = dockedTab !== 'morphology'
     sidePlaceholder.hidden = dockedTab !== null
+    refreshColorDisplay() // the bottom color-display section follows the docked tab's overlay
   }
 
   // Atlas and Function are mutually-exclusive overlays: entering one clears the other (its last
@@ -1015,8 +1176,16 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
 
       if (!view) {
         view = new MultiView(slicesCanvas, surfaceCanvas, client)
-        // Colormap gradient previews are subject-independent — build once from the registered maps.
-        colormapGradients = buildColormapGradients(view.slices, COLORMAP_REGISTRY.map((c) => c.key))
+        // Colormap registry + assets are subject-independent — build once from every map NiiVue
+        // offers (brainana maps + built-ins), then mount the shared color-display section. The
+        // synthetic "Labels" entry (categorical restore) is only meaningful for the atlas target.
+        const built = buildColormapRegistry(availableColormaps(view.slices))
+        colormapInfos = [{ key: LABELS_KEY, label: 'Labels (categorical)', group: 'Brainana' }, ...built]
+        const assets = buildColormapAssets(view.slices, built.map((c) => c.key))
+        colormapGradients = { ...assets.gradients, [LABELS_KEY]: 'repeating-linear-gradient(90deg, #c0563a 0 12%, #d8a24c 12% 24%, #8bbf6e 24% 36%, #4aa0c0 36% 48%, #8f6ed0 48% 60%)' }
+        colormapLuts = assets.luts
+        colorDisplay = createColorDisplay(colorDisplayCallbacks, colormapGradients, colormapInfos)
+        colorDock.append(colorDisplay.element)
         marker = new Marker(view.render)
         gizmo = new OrientationGizmo(surfacePane, view.render)
         gizmo.start()
@@ -1101,16 +1270,7 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
           funcBrightness = v
           void applyFunctionSurface()
         },
-        onColormap: (key) => {
-          funcColormap = key
-          applyFunctionNow() // colormap override applies to the slice overlay; surface keeps its retinotopy LUT
-        },
-        onClip: (lo, hi) => {
-          funcClipLo = lo
-          funcClipHi = hi
-          applyFunctionNow()
-        },
-      }, colormapGradients)
+      })
       sidePicker.append(functionPanel.element)
       funcChoice = null
       loadMorphology(manifest)
@@ -1130,56 +1290,26 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
       morphPanel = createMorphologyPanel({
         onDisplay: (m) => {
           morphMetric = m
-          morphCaption.textContent = morphBaseCaption(m)
           view?.applyMorphologyDisplay(morphDisplay())
-          syncMorphRange()
+          refreshColorDisplay()
         },
         onCurvatureStyle: (s) => {
           morphStyle = s
           view?.applyMorphologyDisplay(morphDisplay())
-          syncMorphRange()
+          refreshColorDisplay()
         },
         onMarkerMode: (mode) => {
           markerMode = mode
           placeMarker()
         },
-        onRange: (min, max) => {
-          const metric = morphMetric === 'none' ? 'curvature' : morphMetric
-          morphRanges[metric] = { min, max }
-          view?.applyMorphologyDisplay(morphDisplay())
-          syncMorphRange() // keep the colorbar in step with the range
-        },
-        onSymmetric: (on) => {
-          const metric = morphMetric === 'none' ? 'curvature' : morphMetric
-          morphSymmetric[metric] = on
-        },
-        onAuto: () => {
-          const metric = morphMetric === 'none' ? 'curvature' : morphMetric
-          morphRanges[metric] = autoMorphRange(metric)
-          view?.applyMorphologyDisplay(morphDisplay())
-          syncMorphRange()
-        },
-        onColormap: (key) => {
-          const metric = morphMetric === 'none' ? 'curvature' : morphMetric
-          morphColormaps[metric] = key
-          view?.applyMorphologyDisplay(morphDisplay())
-          syncMorphRange() // refresh the colorbar gradient
-        },
-        onTransparentBelowMin: (on) => {
-          morphTransparentBelowMin = on
-          view?.applyMorphologyDisplay(morphDisplay())
-          syncMorphRange()
-        },
-      }, colormapGradients)
+      })
       sidePicker.append(morphPanel.element)
-      syncMorphRange()
+      refreshColorDisplay()
 
       // Start each subject base-only: no overlay drawn, no picker docked (bare morphology base).
       dockedTab = null
       lastAtlasSel = null
       lastFuncChoice = null
-      funcCaption.textContent = 'Select a function map.'
-      morphCaption.textContent = morphBaseCaption(morphMetric)
       updateTabUI()
 
       main.classList.add('monkey-loaded')

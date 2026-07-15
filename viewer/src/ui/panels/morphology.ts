@@ -1,10 +1,9 @@
 // Docked "Morphology" picker (top of the side panel): choose the surface shading metric (curvature /
-// sulcal depth / thickness / none), the curvature style (binary FreeSurfer vs continuous gray), the
-// yellow marker mode, and the colour range (with an "Auto 2.5–97.5%" button + symmetric-around-zero).
+// sulcal depth / thickness / none), the curvature style (binary FreeSurfer vs continuous gray), and
+// the yellow marker mode. Color controls (colormap, display range, clip, legend) live in the shared
+// "Color display" section at the bottom of the side panel, not here.
 import { h } from '../dom.ts'
-import type { MorphologyDisplayMetric, MorphologyMetric, CurvatureStyle } from '../../niivue/multiView.ts'
-import { createColormapPicker, type ColormapPicker } from '../components/colormapPicker.ts'
-import { createColorbar, type ColorbarState } from '../components/colorbar.ts'
+import type { MorphologyDisplayMetric, CurvatureStyle } from '../../niivue/multiView.ts'
 
 export type MarkerMode = 'crosshair3d' | 'nearestNode'
 
@@ -12,29 +11,17 @@ export interface MorphologyPanelCallbacks {
   onDisplay: (m: MorphologyDisplayMetric) => void
   onCurvatureStyle: (s: CurvatureStyle) => void
   onMarkerMode: (m: MarkerMode) => void
-  onRange: (min: number, max: number) => void
-  onAuto: () => void
-  onSymmetric: (on: boolean) => void
-  onColormap: (key: string) => void
-  onTransparentBelowMin: (on: boolean) => void
 }
 
 export interface MorphologyPanel {
   element: HTMLElement
   toggle: () => void
   hide: () => void
-  // Refresh the range sliders for the active metric. `hidden` blanks the range group (None or
-  // binary curvature, which is forced to ±1).
-  setRange: (opts: { domainMin: number; domainMax: number; min: number; max: number; metric: MorphologyMetric; hidden: boolean; symmetric: boolean }) => void
-  setColormap: (key: string) => void
-  setColorbar: (state: ColorbarState | null) => void
-  /** Show/hide the colormap + colorbar (continuous metrics only; binary curvature/None hide them). */
-  setColormapVisible: (visible: boolean) => void
 }
 
 const chip = (label: string): HTMLButtonElement => h('button', { type: 'button', class: 'chip' }, [label]) as HTMLButtonElement
 
-export function createMorphologyPanel(cb: MorphologyPanelCallbacks, gradients: Record<string, string>): MorphologyPanel {
+export function createMorphologyPanel(cb: MorphologyPanelCallbacks): MorphologyPanel {
   // Display metric chips.
   const displayChips: Array<[MorphologyDisplayMetric, string]> = [
     ['curvature', 'Curvature'],
@@ -88,73 +75,11 @@ export function createMorphologyPanel(cb: MorphologyPanelCallbacks, gradients: R
     markerRow.append(b)
   }
 
-  // Colour range (min/max) + value read-outs.
-  const fmt = (v: number, metric: MorphologyMetric): string => (metric === 'thickness' ? `${v.toFixed(2)} mm` : v.toFixed(3))
-  const minInput = h('input', { type: 'range' }) as HTMLInputElement
-  const maxInput = h('input', { type: 'range' }) as HTMLInputElement
-  const minVal = h('span', { class: 'muted' }, ['—'])
-  const maxVal = h('span', { class: 'muted' }, ['—'])
-  let rangeMetric: MorphologyMetric = 'curvature'
-  let rangeSymmetric = true
-  const commitRange = (): void => {
-    let lo = Number(minInput.value)
-    let hi = Number(maxInput.value)
-    if (rangeSymmetric) {
-      // Mirror magnitude around zero (curvature/sulc); the changed handle wins.
-      const mag = Math.max(Math.abs(lo), Math.abs(hi))
-      lo = -mag
-      hi = mag
-      minInput.value = String(lo)
-      maxInput.value = String(hi)
-    } else if (lo > hi) {
-      lo = hi
-      minInput.value = String(lo)
-    }
-    minVal.textContent = fmt(lo, rangeMetric)
-    maxVal.textContent = fmt(hi, rangeMetric)
-    cb.onRange(lo, hi)
-  }
-  minInput.addEventListener('input', commitRange)
-  maxInput.addEventListener('input', commitRange)
-
-  const symChip = chip('Symmetric')
-  symChip.classList.add('active')
-  symChip.addEventListener('click', () => {
-    rangeSymmetric = !rangeSymmetric
-    symChip.classList.toggle('active', rangeSymmetric)
-    cb.onSymmetric(rangeSymmetric)
-    if (rangeSymmetric) commitRange()
-  })
-  const autoBtn = chip('Auto 2.5–97.5%')
-  autoBtn.addEventListener('click', () => cb.onAuto())
-
-  // "Hide below min" = the surface value-clip (renders samples below cal_min transparent).
-  const clipChip = chip('Hide below min')
-  clipChip.addEventListener('click', () => {
-    const on = !clipChip.classList.contains('active')
-    clipChip.classList.toggle('active', on)
-    cb.onTransparentBelowMin(on)
-  })
-
-  const rangeField = h('div', { class: 'field' }, [
-    h('span', {}, ['Colour range']),
-    h('div', { class: 'row' }, [h('label', { class: 'field' }, [h('span', {}, ['Min ', minVal]), minInput]), h('label', { class: 'field' }, [h('span', {}, ['Max ', maxVal]), maxInput])]),
-    h('div', { class: 'chip-row' }, [autoBtn, symChip, clipChip]),
-  ])
-
-  // Colormap picker + colorbar (continuous metrics only; hidden for binary curvature / None).
-  const colorbar = createColorbar('Colour range')
-  const cmap: ColormapPicker = createColormapPicker({ gradients, value: 'gray', onChange: (key) => cb.onColormap(key) })
-  const cmapField = h('label', { class: 'field' }, [h('span', {}, ['Colormap']), cmap.element])
-
   const element = h('div', { class: 'side-panel', hidden: true }, [
     h('div', { class: 'side-panel-head' }, ['Morphology']),
     h('div', { class: 'field' }, [h('span', {}, ['Display']), displayRow]),
     styleField,
     h('div', { class: 'field' }, [h('span', {}, ['Yellow marker']), markerRow]),
-    colorbar.element,
-    cmapField,
-    rangeField,
   ])
 
   // Initial active states.
@@ -166,27 +91,5 @@ export function createMorphologyPanel(cb: MorphologyPanelCallbacks, gradients: R
     element,
     toggle: () => (element.hidden = !element.hidden),
     hide: () => (element.hidden = true),
-    setRange: ({ domainMin, domainMax, min, max, metric, hidden, symmetric }) => {
-      rangeMetric = metric
-      rangeSymmetric = symmetric
-      symChip.classList.toggle('active', symmetric)
-      rangeField.hidden = hidden
-      const step = (domainMax - domainMin) / 500 || 0.001
-      for (const inp of [minInput, maxInput]) {
-        inp.min = String(domainMin)
-        inp.max = String(domainMax)
-        inp.step = String(step)
-      }
-      minInput.value = String(min)
-      maxInput.value = String(max)
-      minVal.textContent = fmt(min, metric)
-      maxVal.textContent = fmt(max, metric)
-    },
-    setColormap: (key) => cmap.setValue(key),
-    setColorbar: (state) => (state ? colorbar.set(state) : colorbar.hide()),
-    setColormapVisible: (visible) => {
-      cmapField.hidden = !visible
-      if (!visible) colorbar.hide()
-    },
   }
 }

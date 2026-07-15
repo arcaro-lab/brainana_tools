@@ -5,6 +5,7 @@ import { Niivue, NVImage, NVMesh, SLICE_TYPE, MULTIPLANAR_TYPE, SHOW_RENDER, NVM
 import type { RuntimeClient } from '../../../core/client/runtimeClient.ts'
 import type { Layout } from '../state/store.ts'
 import { registerColormaps } from './colormaps.ts'
+import { mapFunctionalDisplay } from '../data/functional.ts'
 
 // Per-surface render zoom so different geometries fill the pane consistently (v1.2.25 f_).
 const SURFACE_SCALE: Record<string, number> = { pial: 2.15, white: 2.15, smoothwm: 2.15, inflated: 1.45, veryinflated: 1.35, sphere: 1.25 }
@@ -149,9 +150,32 @@ export class MultiView {
     this.#atlasVol = vol
   }
 
+  // The flat 256×4 RGBA LUT for a registered colormap (live), or null if unavailable.
+  colormapLut(name: string): Uint8ClampedArray | null {
+    try {
+      const rgba = (this.slices as unknown as { colormap: (id: string) => ArrayLike<number> }).colormap(name)
+      if (!rgba || rgba.length < 4) return null
+      return rgba instanceof Uint8ClampedArray ? rgba : Uint8ClampedArray.from(rgba as ArrayLike<number>)
+    } catch {
+      return null
+    }
+  }
+
   setAtlasColortable(table: { R: number[]; G: number[]; B: number[]; A: number[]; I: number[]; labels: string[] }): void {
     if (!this.#atlasVol) return
     this.#atlasVol.setColormapLabel(table)
+    this.slices.updateGLVolume()
+  }
+
+  // Render the atlas volume with a continuous colormap instead of its categorical label table,
+  // spread across the label-id range. Restore the categorical look via setAtlasColortable().
+  setAtlasColormap(name: string): void {
+    if (!this.#atlasVol) return
+    const vol = this.#atlasVol as unknown as { colormapLabel: unknown; cal_min: number; cal_max: number; global_max?: number }
+    vol.colormapLabel = null
+    this.slices.setColormap(this.#atlasVol.id, name)
+    vol.cal_min = 0
+    vol.cal_max = vol.global_max ?? 255
     this.slices.updateGLVolume()
   }
 
@@ -210,41 +234,38 @@ export class MultiView {
     return out
   }
 
-  // Display `valueFrame` masked by `fFrame` >= threshold AND clipped to the [clipLow, clipHigh]
-  // value window (either bound null = unbounded). Failing voxels are set to a sentinel BELOW
-  // cal_min so they map to the transparent index-0 of the LUT (hidden, not colored-as-0). The
-  // F-stat mask (statistical) and the value clip (display) are independent and compose.
-  applyFunctional(valueFrame: number, fFrame: number | null, threshold: number, colormap: string, opacity: number, calMin: number, calMax: number, clipLow: number | null = null, clipHigh: number | null = null): void {
+  // Display `valueFrame`, masked by `fFrame` >= threshold and by the [clipLow, clipHigh] value
+  // window (either bound null = unbounded) — failing voxels get a sentinel BELOW cal_min → the
+  // transparent index-0 of the LUT (hidden). SURVIVING voxels are remapped for DISPLAY: the window
+  // [displayMin, displayMax] maps onto the colormap's opaque range so narrowing it only changes
+  // contrast (voxels never disappear). cal_min/cal_max stay FIXED at the map's natural range.
+  applyFunctional(valueFrame: number, fFrame: number | null, threshold: number, colormap: string, opacity: number, calMin: number, calMax: number, displayMin: number, displayMax: number, clipLow: number | null = null, clipHigh: number | null = null): void {
     const meta = this.#funcMeta
     const vol = this.#funcVol
     if (!meta || !vol?.img) return
     const { frameSize, slope, inter, originals } = meta
     const img = vol.img
-    const sentinel = calMin - 1000 // guaranteed below cal_min → transparent
+    const toRaw = (scaled: number): number => (scaled - inter) / slope
+    const rawSentinel = toRaw(calMin - 1000) // scaled sentinel below cal_min → transparent index-0
     const vStart = valueFrame * frameSize
     if (!originals.has(valueFrame)) originals.set(valueFrame, Float32Array.from(img.subarray(vStart, vStart + frameSize)))
     const original = originals.get(valueFrame) as Float32Array
-    const clipping = clipLow !== null || clipHigh !== null
-    if (fFrame == null && !clipping) {
-      img.set(original, vStart)
-    } else {
-      const hasF = fFrame != null
-      const fStart = hasF ? (fFrame as number) * frameSize : 0
-      for (let i = 0; i < frameSize; i++) {
-        let pass = true
-        if (hasF) {
-          const f = img[fStart + i] * slope + inter
-          pass = Number.isFinite(f) && f >= threshold
-        }
-        if (pass && clipping) {
-          const val = original[i] * slope + inter // scaled/displayed value for the clip window
-          pass = (clipLow === null || val >= clipLow) && (clipHigh === null || val <= clipHigh)
-        }
-        img[vStart + i] = pass ? original[i] : sentinel
+    const hasF = fFrame != null
+    const fStart = hasF ? (fFrame as number) * frameSize : 0
+    for (let i = 0; i < frameSize; i++) {
+      const val = original[i] * slope + inter // scaled original value (for masking + display remap)
+      let pass = Number.isFinite(val)
+      if (pass && hasF) {
+        const f = img[fStart + i] * slope + inter
+        pass = Number.isFinite(f) && f >= threshold
       }
+      if (pass && (clipLow !== null || clipHigh !== null)) {
+        pass = (clipLow === null || val >= clipLow) && (clipHigh === null || val <= clipHigh)
+      }
+      img[vStart + i] = pass ? toRaw(mapFunctionalDisplay(val, displayMin, displayMax, calMin, calMax)) : rawSentinel
     }
     this.slices.setColormap(vol.id, colormap)
-    vol.cal_min = calMin
+    vol.cal_min = calMin // FIXED at the map's natural range; display range is applied via the remap
     vol.cal_max = calMax
     this.slices.setFrame4D(vol.id, valueFrame)
     const idx = this.slices.getVolumeIndexByID(vol.id)

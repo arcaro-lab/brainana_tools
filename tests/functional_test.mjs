@@ -1,7 +1,7 @@
 // Unit tests for the pure functional-map math (viewer/src/data/functional.ts).
 // Run via Node's native TypeScript support (Node >= 22.18 strips types on import).
 import assert from 'node:assert/strict'
-import { finiteExtrema, applyThresholdMask, functionalModes, createFunctionalSurfaceLut, quantizeFunctionalSurfaceValues, maskSurfaceBinsByF } from '../viewer/src/data/functional.ts'
+import { finiteExtrema, applyThresholdMask, functionalModes, createFunctionalSurfaceLut, quantizeFunctionalSurfaceValues, maskSurfaceBinsByF, maskSurfaceBinsByValue, surfaceLutFromColormap, mapFunctionalDisplay } from '../viewer/src/data/functional.ts'
 
 let passed = 0
 const ok = (name) => {
@@ -99,5 +99,82 @@ assert.equal(maskedBins[1], 200, 'F above threshold -> bin kept')
 assert.equal(maskedBins[2], 0, 'non-finite F -> bin 0')
 assert.equal(maskedBins[3], 30, 'F exactly at threshold -> kept')
 ok('maskSurfaceBinsByF hides sub-threshold vertices on the surface')
+
+// --- surfaceLutFromColormap: bin 0 transparent, endpoints sample source, brightness monotonic ---
+{
+  // 2-entry source LUT: red -> blue (flat RGBA)
+  const src = [255, 0, 0, 255, 0, 0, 255, 255]
+  const { lut, min, max } = surfaceLutFromColormap(src, 1)
+  assert.equal(lut.length, 256 * 4, '256-entry RGBA output')
+  assert.deepEqual([min, max], [0, 255], 'label LUT domain 0..255')
+  assert.deepEqual([lut[0], lut[1], lut[2], lut[3]], [0, 0, 0, 0], 'bin 0 transparent')
+  assert.deepEqual([lut[4], lut[5], lut[6], lut[7]], [255, 0, 0, 255], 'bin 1 samples source start (red)')
+  assert.deepEqual([lut[255 * 4], lut[255 * 4 + 1], lut[255 * 4 + 2]], [0, 0, 255], 'bin 255 samples source end (blue)')
+  // brightness > 1 blends toward white: a mid bin gets lighter
+  const bright = surfaceLutFromColormap(src, 1.5).lut
+  assert.ok(bright[128 * 4] >= lut[128 * 4] && bright[128 * 4 + 2] >= lut[128 * 4 + 2], 'brightness>1 lightens channels')
+  assert.ok(bright[128 * 4] > lut[128 * 4], 'brightness>1 strictly lightens a non-white channel')
+  ok('surfaceLutFromColormap: bin0 transparent, endpoints sample source, brightness lightens')
+}
+
+// --- surfaceLutFromColormap skips a transparent source index-0 (brainana maps) so bin 1 isn't black ---
+{
+  // 3-entry source: index0 transparent black, index1 red, index2 blue
+  const src = [0, 0, 0, 0, 255, 0, 0, 255, 0, 0, 255, 255]
+  const { lut } = surfaceLutFromColormap(src, 1)
+  assert.deepEqual([lut[4], lut[5], lut[6]], [255, 0, 0], 'bin 1 = first OPAQUE color (red), not the black slot')
+  assert.deepEqual([lut[255 * 4], lut[255 * 4 + 1], lut[255 * 4 + 2]], [0, 0, 255], 'bin 255 = last color (blue)')
+  ok('surfaceLutFromColormap skips a transparent source index-0 so clamped-low vertices are not black')
+}
+
+// --- mapFunctionalDisplay: clamps into the opaque range, never below cal_min (index 0) ---
+{
+  const calMin = 0
+  const calMax = 254 // step = 1, so opaque range is [1, 254]
+  // value at dMin maps to the first opaque slot (calMin + step), not calMin itself
+  assert.equal(mapFunctionalDisplay(0, 0, 100, calMin, calMax), 1, 'dMin -> first opaque (index 1)')
+  assert.equal(mapFunctionalDisplay(100, 0, 100, calMin, calMax), 254, 'dMax -> calMax (index 255)')
+  // below dMin clamps to first opaque (still > calMin, so visible — not transparent index 0)
+  const below = mapFunctionalDisplay(-50, 0, 100, calMin, calMax)
+  assert.ok(below > calMin, 'below dMin stays above cal_min (opaque, not hidden)')
+  assert.equal(below, 1, 'below dMin clamps to first opaque slot')
+  // above dMax clamps to calMax
+  assert.equal(mapFunctionalDisplay(500, 0, 100, calMin, calMax), 254, 'above dMax clamps to calMax')
+  // monotonic across the window
+  const a = mapFunctionalDisplay(25, 0, 100, calMin, calMax)
+  const b = mapFunctionalDisplay(75, 0, 100, calMin, calMax)
+  assert.ok(b > a, 'monotonic increasing across the window')
+  // degenerate window (dMin==dMax) doesn't divide by zero
+  assert.ok(Number.isFinite(mapFunctionalDisplay(5, 3, 3, calMin, calMax)), 'zero-width window is finite')
+  ok('mapFunctionalDisplay clamps into the opaque range (never hides), endpoints + monotonic')
+}
+
+// --- quantizeFunctionalSurfaceValues with a display range: linear clamp over [min,max] ---
+{
+  const bins = quantizeFunctionalSurfaceValues(new Float32Array([0, 5, 10, -3, 20]), 'eccentricity', { min: 0, max: 10 })
+  assert.equal(bins[0], 1, 'value at range.min -> bin 1')
+  assert.equal(bins[2], 255, 'value at range.max -> bin 255')
+  assert.equal(bins[3], 1, 'below range clamps to bin 1 (still visible)')
+  assert.equal(bins[4], 255, 'above range clamps to bin 255')
+  assert.ok(bins[1] > 1 && bins[1] < 255, 'mid value in between')
+  // sentinel / non-finite still -> bin 0 (transparent)
+  assert.equal(quantizeFunctionalSurfaceValues(new Float32Array([NaN, -999]), 'polar', { min: -1, max: 1 })[0], 0, 'NaN -> bin 0')
+  ok('quantizeFunctionalSurfaceValues honors a display range (linear clamp, sentinel transparent)')
+}
+
+// --- maskSurfaceBinsByValue: hide vertices outside the [lo,hi] window ---
+{
+  const bins = new Float32Array([100, 150, 200, 50])
+  const values = new Float32Array([0, 5, 10, -2])
+  const out = maskSurfaceBinsByValue(bins, values, 1, 8)
+  assert.equal(out[0], 0, 'value 0 < lo 1 -> hidden')
+  assert.equal(out[1], 150, 'value 5 in [1,8] -> kept')
+  assert.equal(out[2], 0, 'value 10 > hi 8 -> hidden')
+  assert.equal(out[3], 0, 'value -2 < lo -> hidden')
+  // null bounds = unbounded
+  const lowOnly = maskSurfaceBinsByValue(bins, values, 1, null)
+  assert.equal(lowOnly[2], 200, 'no upper bound keeps high values')
+  ok('maskSurfaceBinsByValue hides surface vertices outside the value window')
+}
 
 console.log(`functional_test: ${passed} checks passed`)

@@ -20,7 +20,6 @@ export interface RoiLegendCallbacks {
 export class RoiLegend {
   #cb: RoiLegendCallbacks
   #title = h('div', { class: 'legend-title' }, ['No visible atlas'])
-  #subtitle = h('div', { class: 'legend-subtitle muted' }, ['Click to toggle · Shift-click to isolate'])
   #count = h('span', { class: 'legend-count muted' }, [''])
   #search = h('input', { type: 'text', placeholder: 'Search ROIs…', class: 'legend-search' }) as HTMLInputElement
   #scroll = h('div', { class: 'legend-scroll' })
@@ -50,7 +49,6 @@ export class RoiLegend {
     root.innerHTML = ''
     root.append(
       this.#title,
-      this.#subtitle,
       h('div', { class: 'legend-actions' }, [showAll, hideAll, invert, this.#count]),
       this.#search,
       this.#scroll,

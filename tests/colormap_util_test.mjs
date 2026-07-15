@@ -8,6 +8,8 @@ import {
   colormapInfo,
   gradientFromStops,
   gradientFromRgba,
+  buildColormapRegistry,
+  prettifyLabel,
 } from '../viewer/src/data/colormap.ts'
 
 let passed = 0
@@ -52,5 +54,23 @@ ok('colormapInfo resolves keys and flags cyclic maps')
   assert.equal(gradientFromRgba([], 8), 'linear-gradient(90deg, #000, #000)', 'empty LUT -> neutral')
   ok('gradientFromRgba samples endpoints from a flat RGBA LUT')
 }
+
+// --- buildColormapRegistry: brainana first, curated groups, unknowns -> Other ---
+{
+  const reg = buildColormapRegistry(['viridis', 'brainana_polar_angle', 'coolwarm', 'weird_map', 'gray'])
+  assert.equal(reg[0].group, 'Brainana', 'brainana maps listed first')
+  // brainana_polar_angle is in the brainana block, not duplicated among builtins
+  assert.equal(reg.filter((c) => c.key === 'brainana_polar_angle').length, 1, 'no duplicate brainana entry')
+  assert.equal(reg.find((c) => c.key === 'viridis')?.group, 'Perceptually Uniform', 'viridis grouped')
+  assert.equal(reg.find((c) => c.key === 'coolwarm')?.group, 'Diverging', 'coolwarm grouped')
+  const weird = reg.find((c) => c.key === 'weird_map')
+  assert.equal(weird?.group, 'Other', 'unknown -> Other')
+  assert.equal(weird?.label, 'Weird Map', 'unknown label title-cased')
+  ok('buildColormapRegistry orders brainana first, curates known maps, title-cases unknowns')
+}
+
+assert.equal(prettifyLabel('blue2red'), 'Blue2red', 'prettify simple')
+assert.equal(prettifyLabel('rd_bu'), 'Rd Bu', 'prettify underscores')
+ok('prettifyLabel title-cases colormap keys')
 
 console.log(`colormap_util_test: ${passed} checks passed`)
