@@ -122,6 +122,16 @@ button { font: inherit; }
   transform: translateX(-50%); background: transparent;
 }
 .panel-resizer:hover::after, .panel-resizer:active::after { background: var(--accent); }
+.info-resizer {
+  position: absolute; left: 0; right: var(--legend-width);
+  bottom: var(--info-height); transform: translateY(50%);
+  height: 8px; z-index: 40; cursor: row-resize; touch-action: none;
+}
+.info-resizer::after {
+  content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 2px;
+  transform: translateY(-50%); background: transparent;
+}
+.info-resizer:hover::after, .info-resizer:active::after { background: var(--accent); }
 .legend-title { font-size: 13px; font-weight: 600; }
 .legend-subtitle { font-size: 11px; margin-bottom: 6px; }
 .legend-actions { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; flex-wrap: wrap; }
@@ -142,19 +152,16 @@ button { font: inherit; }
 .legend-id { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .legend-label { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.float-panel {
-  position: absolute; top: 10px; right: 16px; z-index: 20;
-  background: color-mix(in srgb, var(--panel) 92%, #000); border: 1px solid var(--border-2);
-  border-radius: 12px; padding: 13px; width: 280px;
-  box-shadow: 0 20px 46px rgba(0,0,0,0.5); backdrop-filter: blur(3px);
-}
-.float-panel[hidden] { display: none; }
-.float-panel-head { font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.float-panel-close {
-  background: transparent; border: 0; color: var(--muted); cursor: pointer;
-  font-size: 18px; line-height: 1; padding: 0 2px; border-radius: 4px;
-}
-.float-panel-close:hover { color: var(--text); background: var(--panel-2); }
+/* Docked category picker: sits at the top of the side panel (no longer a floating overlay). */
+.side-picker { flex: 0 0 auto; }
+.side-panel { width: 100%; padding: 2px 0 11px; margin-bottom: 9px; border-bottom: 1px solid var(--border); }
+.side-panel[hidden] { display: none; }
+.side-panel-head { font-weight: 600; margin-bottom: 10px; }
+/* Content below the docked picker; exactly one slot is visible at a time (ROI legend / func / morph). */
+.side-content { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.side-slot { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.side-slot[hidden] { display: none; }
+.side-caption { font-size: 12px; padding: 2px 0; }
 .chip-row { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
 .chip { background: var(--panel-2); border: 1px solid var(--border); color: var(--text); padding: 4px 9px; border-radius: 999px; cursor: pointer; font-size: 12px; }
 .chip.active { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
@@ -177,6 +184,9 @@ button { font: inherit; }
 .info-col dl { margin: 0; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 5px 12px; font-size: 12px; line-height: 1.35; }
 .info-col dt { color: var(--muted); }
 .info-col dd { margin: 0; color: var(--text); overflow-wrap: anywhere; }
+/* 4-column paired variant: dt dd dt dd per row; single-pair rows span the last 3 cols. */
+.info-col dl.dl-paired { grid-template-columns: max-content minmax(0,1fr) max-content minmax(0,1fr); }
+.info-col dl.dl-paired .dl-span { grid-column: span 3; }
 .func-subheading { margin: 7px 0 4px; font-size: 12.5px; font-weight: 700; line-height: 1.15; color: var(--text); }
 .func-subheading:first-child { margin-top: 0; }
 
@@ -194,10 +204,8 @@ button { font: inherit; }
 /* Neighborhood dropdown above the visual-field plot. */
 .neighborhood-control { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 10px; }
 .neighborhood-control select { min-width: 84px; padding: 3px 5px; font-size: 10px; }
-.vf-canvas { display: block; width: min(100%, calc(var(--info-height) - 24px), 300px); aspect-ratio: 1; height: auto; margin: 2px auto 0; }
+.vf-canvas { display: block; width: min(100%, calc(var(--info-height) - 70px)); aspect-ratio: 1; height: auto; margin: 2px auto 0; }
 .field.inline { flex-direction: row; align-items: center; gap: 6px; }
-.float-panel-close { position: absolute; top: 8px; right: 10px; background: none; border: 0; color: var(--muted); font-size: 18px; cursor: pointer; line-height: 1; }
-.float-panel-head { position: relative; }
 
 .slice-pane, .surface-pane { position: relative; background: #000; min-height: 0; overflow: hidden; }
 .nv-canvas { width: 100%; height: 100%; display: block; }

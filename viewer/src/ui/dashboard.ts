@@ -34,11 +34,11 @@ interface Deps {
 // synthesizes it by puffing 'inflated'), so it isn't offered as a surface.
 const SURFACE_ORDER = ['pial', 'white', 'smoothwm', 'inflated', 'sphere'] as const
 const SURFACE_LABELS: Record<string, string> = {
-  pial: 'Pial',
-  white: 'White',
-  smoothwm: 'SmoothWM',
-  inflated: 'Inflated',
-  sphere: 'Sphere',
+  pial: 'pial',
+  white: 'white',
+  smoothwm: 'smoothWM',
+  inflated: 'inflated',
+  sphere: 'sphere',
 }
 
 // Build a <dl> of <dt>/<dd> label:value rows for the info panel.
@@ -91,6 +91,12 @@ const MORPH_DEFAULT_RANGE: Record<MorphologyMetric, { min: number; max: number }
   curvature: { min: -0.2, max: 0.2 },
   sulc: { min: -3, max: 3 },
   thickness: { min: 1, max: 3 },
+}
+// Caption shown in the morphology content slot; morphology is always the base surface shading.
+function morphBaseCaption(m: MorphologyDisplayMetric): string {
+  if (m === 'none') return 'No shading (flat base).'
+  const label = m === 'curvature' ? 'Curvature' : m === 'sulc' ? 'Sulcal depth' : 'Cortical thickness'
+  return `${label} (base layer).`
 }
 
 export function mountDashboard(root: HTMLElement, deps: Deps): void {
@@ -161,7 +167,19 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
   // Splitter for the surf-pane / side-panel boundary. It's a direct child of `main` (not the
   // aside) anchored to the column seam via CSS, so it's reliably on top and grabbable (Req 4).
   const panelResizer = h('div', { class: 'panel-resizer', title: 'Drag to resize the panel' })
-  const atlasLegend = h('aside', { class: 'atlas-legend' }, [h('div', { class: 'legend-title muted' }, ['No visible atlas'])])
+  const infoResizer = h('div', { class: 'info-resizer', title: 'Drag to resize the info panel' })
+  // The side panel docks the active category's picker at the top (`sidePicker`) with
+  // category-specific content below (`sideContent`): the atlas ROI legend, or a light caption for
+  // function / morphology. Exactly one content slot is visible at a time (driven by `updateTabUI`).
+  const sidePicker = h('div', { class: 'side-picker' })
+  const legendSlot = h('div', { class: 'side-slot', hidden: true })
+  const funcCaption = h('div', { class: 'side-caption muted' }, ['Select a function map.'])
+  const funcSlot = h('div', { class: 'side-slot', hidden: true }, [funcCaption])
+  const morphCaption = h('div', { class: 'side-caption muted' }, ['Curvature (base layer).'])
+  const morphSlot = h('div', { class: 'side-slot', hidden: true }, [morphCaption])
+  const sidePlaceholder = h('div', { class: 'legend-title muted' }, ['Select Atlases, Morphology, or Function above.'])
+  const sideContent = h('div', { class: 'side-content' }, [legendSlot, funcSlot, morphSlot, sidePlaceholder])
+  const atlasLegend = h('aside', { class: 'atlas-legend' }, [sidePicker, sideContent])
   const infoPanel = h('section', { class: 'info-panel' }, [
     h('div', { class: 'info-col' }, [h('h3', {}, ['Coordinates']), h('div', { id: 'report-coordinates', class: 'muted' }, ['—'])]),
     h('div', { class: 'info-col' }, [h('h3', {}, ['Anatomy']), h('div', { id: 'report-anatomy', class: 'muted' }, ['—'])]),
@@ -177,7 +195,7 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
   const placeholder = h('div', { class: 'monkey-placeholder' }, ['Select a monkey to begin.'])
   const loadingText = h('div', { class: 'loading-text' }, ['Loading…'])
   const loadingOverlay = h('div', { class: 'loading-overlay', hidden: true }, [h('div', { class: 'spinner' }), loadingText])
-  const main = h('main', { class: 'dashboard' }, [viewerArea, atlasLegend, panelResizer, infoPanel, placeholder, loadingOverlay])
+  const main = h('main', { class: 'dashboard' }, [viewerArea, atlasLegend, panelResizer, infoResizer, infoPanel, placeholder, loadingOverlay])
 
   root.append(toolbar, main)
 
@@ -297,13 +315,21 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
   }
 
   // --- atlas state ---
-  const legend = new RoiLegend(atlasLegend, { onHiddenChange: (hidden) => applyHidden(hidden) })
+  const legend = new RoiLegend(legendSlot, { onHiddenChange: (hidden) => applyHidden(hidden) })
   let atlasPanel: AtlasPanel | null = null
   let atlasEntries: AtlasLabel[] = []
   let atlasSeed = ARM_SEED
   let atlasOpacity = 0.7
   let atlasSurfacePair: { left: string; right: string } | null = null
   let atlasHidden = new Set<number>()
+
+  // Which category's picker is docked at the top of the side panel (drives the button highlight and
+  // the visible content slot). Atlas and Function are mutually-exclusive overlays; Morphology is an
+  // always-on base underlay, so its tab leaves the active overlay untouched. `lastAtlasSel` /
+  // `lastFuncChoice` remember each overlay's selection so re-entering its tab restores it.
+  let dockedTab: 'atlas' | 'morphology' | 'function' | null = null
+  let lastAtlasSel: AtlasSelection | null = null
+  let lastFuncChoice: FunctionChoice | null = null
 
   function applyHidden(hidden: Set<number>): void {
     if (!view || atlasEntries.length === 0) return
@@ -442,12 +468,6 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
     })
   }
 
-  const atlasBtn = panelBtns[PANEL_BUTTONS.indexOf('Atlases')]
-  atlasBtn.addEventListener('click', () => {
-    atlasPanel?.toggle()
-    atlasBtn.classList.toggle('active', !atlasPanel?.element.hidden)
-  })
-
   // --- function state (retinotopy / somatotopy) ---
   let functionPanel: FunctionPanel | null = null
   let funcChoice: FunctionChoice | null = null
@@ -530,28 +550,28 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
       const [vx, vy] = visualXY(polar, ecc)
       // Single dl keeps every label:value pair aligned; the last three ids are filled by
       // updateVisualField from the sampled neighborhood (kept in sync via the crosshair order).
-      const dl = h('dl')
+      const dl = h('dl', { class: 'dl-paired' })
       const row = (label: string, value: string, id?: string): void => {
-        dl.append(h('dt', {}, [label]), h('dd', id ? { id } : {}, [value]))
+        dl.append(h('dt', {}, [label]), h('dd', { class: 'dl-span', ...(id ? { id } : {}) }, [value]))
       }
-      row('Polar angle', num(polar, ' rad'))
-      row('Polar-angle F', num(view.sampleFunctionFrame(vox, f.polarF)))
-      row('Eccentricity', num(ecc, '°'))
-      row('Eccentricity F', num(view.sampleFunctionFrame(vox, f.eccentricityF)))
-      row('Visual X', num(vx))
-      row('Visual Y', num(vy))
-      row('Valid voxels', '—', 'func-valid')
-      row('Offset to median', '—', 'func-offset')
-      row('Local spread', '—', 'func-spread')
+      const rowPaired = (label1: string, val1: string, label2: string, val2: string): void => {
+        dl.append(h('dt', {}, [label1]), h('dd', {}, [val1]), h('dt', {}, [label2]), h('dd', {}, [val2]))
+      }
+      rowPaired('polar angle (rad)', num(polar), 'F', num(view.sampleFunctionFrame(vox, f.polarF)))
+      rowPaired('eccentricity (°)', num(ecc), 'F', num(view.sampleFunctionFrame(vox, f.eccentricityF)))
+      rowPaired('visual X (°)', num(vx), 'visual Y (°)', num(vy))
+      row('valid voxels', '—', 'func-valid')
+      row('offset to median (°)', '—', 'func-offset')
+      row('local spread (°)', '—', 'func-spread')
       el.append(h('h3', { class: 'func-subheading' }, ['Retinotopy']), dl)
     } else {
       const fstat = view.sampleFunctionFrame(vox, f.fstat)
       el.append(
         h('h3', { class: 'func-subheading' }, ['Somatotopy']),
         dlRows([
-          ['Body position', num(view.sampleFunctionFrame(vox, f.phase))],
-          ['Somatotopy F', num(fstat)],
-          ['Status', fstat >= funcThreshold ? 'Passes threshold' : 'Below threshold'],
+          ['body position', num(view.sampleFunctionFrame(vox, f.phase))],
+          ['somatotopy F', num(fstat)],
+          ['status', fstat >= funcThreshold ? 'passes threshold' : 'below threshold'],
         ]),
       )
     }
@@ -595,9 +615,9 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
       if (d) d.textContent = text
     }
     setDd('func-valid', `${points.length} / ${possible}`)
-    setDd('func-offset', points.length && stats.offset != null ? `${stats.offset.toFixed(2)}°` : 'N/A')
-    setDd('func-spread', points.length ? `${stats.spread.toFixed(2)}°` : 'N/A')
-    if (note) note.textContent = points.length ? `${points.length} valid · spread ${stats.spread.toFixed(2)}°${stats.offset != null ? ` · offset ${stats.offset.toFixed(2)}°` : ''}` : 'No valid retinotopic voxel here.'
+    setDd('func-offset', points.length && stats.offset != null ? stats.offset.toFixed(2) : 'N/A')
+    setDd('func-spread', points.length ? stats.spread.toFixed(2) : 'N/A')
+    if (note) note.textContent = points.length ? '' : 'No valid retinotopic voxel here.'
   }
 
   const applyFunctionNow = (): void => {
@@ -610,6 +630,7 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
     funcChoice = choice
     funcSurfaceFrames = null // invalidate the cached surface frames for the previous choice
     functionPanel?.setActive(choice ? choiceKey(choice) : null)
+    funcCaption.textContent = choice ? `${choice.kind === 'retinotopy' ? 'Retinotopy' : 'Somatotopy'} · ${choice.mode.label}` : 'Select a function map.'
     if (!choice) {
       view.removeFunctional()
       view.clearSurfaceFunctionLayers()
@@ -640,6 +661,37 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
   }
 
   neighborhoodSelect.addEventListener('change', updateVisualField)
+
+  // Drag the top boundary of the info panel: update --info-height and redraw the visual field.
+  {
+    let dragging = false
+    const setInfoHeight = (clientY: number): void => {
+      const rect = main.getBoundingClientRect()
+      const height = Math.max(120, Math.min(rect.height - 200, rect.bottom - clientY))
+      document.documentElement.style.setProperty('--info-height', `${Math.round(height)}px`)
+      view?.resize()
+      updateVisualField()
+    }
+    infoResizer.addEventListener('pointerdown', (e) => {
+      dragging = true
+      infoResizer.setPointerCapture(e.pointerId)
+      e.preventDefault()
+    })
+    infoResizer.addEventListener('pointermove', (e) => {
+      if (dragging) setInfoHeight(e.clientY)
+    })
+    const end = (e: PointerEvent): void => {
+      if (!dragging) return
+      dragging = false
+      try {
+        infoResizer.releasePointerCapture(e.pointerId)
+      } catch {
+        /* pointer already released */
+      }
+    }
+    infoResizer.addEventListener('pointerup', end)
+    infoResizer.addEventListener('pointercancel', end)
+  }
 
   // --- surface report (morphology at the crosshair vertex) ---
   let lastMm: [number, number, number] | null = null
@@ -710,29 +762,64 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
       return a && node.index < a.length ? a[node.index] : NaN
     }
     const rows: Array<[string, string]> = [
-      ['Geometry', SURFACE_LABELS[surfSelect.value] ?? surfSelect.value],
-      ['Hemisphere', node.hemi === 0 ? 'Left' : 'Right'],
-      ['Nearest vertex', String(node.index)],
-      ['Distance', Number.isFinite(dist) ? `${dist.toFixed(2)} mm` : '—'],
-      ['Curvature', num(sample('curvature'))],
-      ['Sulcal depth', num(sample('sulc'))],
-      ['Thickness', num(sample('thickness'), ' mm')],
+      ['geometry', SURFACE_LABELS[surfSelect.value] ?? surfSelect.value],
+      ['hemisphere', node.hemi === 0 ? 'left' : 'right'],
+      ['nearest vertex', String(node.index)],
+      ['distance (mm)', Number.isFinite(dist) ? dist.toFixed(2) : '—'],
+      ['curvature', num(sample('curvature'))],
+      ['sulcal depth', num(sample('sulc'))],
+      ['thickness (mm)', num(sample('thickness'))],
     ]
     el.innerHTML = ''
     el.append(dlRows(rows))
   }
 
-  const functionBtn = panelBtns[PANEL_BUTTONS.indexOf('Function')]
-  functionBtn.addEventListener('click', () => {
-    functionPanel?.toggle()
-    functionBtn.classList.toggle('active', !functionPanel?.element.hidden)
-  })
-
+  // --- category tabs: an exclusive selector that docks one picker at the top of the side panel ---
+  const atlasBtn = panelBtns[PANEL_BUTTONS.indexOf('Atlases')]
   const morphBtn = panelBtns[PANEL_BUTTONS.indexOf('Morphology')]
-  morphBtn.addEventListener('click', () => {
-    morphPanel?.toggle()
-    morphBtn.classList.toggle('active', !morphPanel?.element.hidden)
-  })
+  const functionBtn = panelBtns[PANEL_BUTTONS.indexOf('Function')]
+
+  // Reflect the docked tab in the button highlight, the docked picker, and the content slot.
+  const updateTabUI = (): void => {
+    atlasBtn.classList.toggle('active', dockedTab === 'atlas')
+    morphBtn.classList.toggle('active', dockedTab === 'morphology')
+    functionBtn.classList.toggle('active', dockedTab === 'function')
+    if (atlasPanel) atlasPanel.element.hidden = dockedTab !== 'atlas'
+    if (morphPanel) morphPanel.element.hidden = dockedTab !== 'morphology'
+    if (functionPanel) functionPanel.element.hidden = dockedTab !== 'function'
+    legendSlot.hidden = dockedTab !== 'atlas'
+    funcSlot.hidden = dockedTab !== 'function'
+    morphSlot.hidden = dockedTab !== 'morphology'
+    sidePlaceholder.hidden = dockedTab !== null
+  }
+
+  // Atlas and Function are mutually-exclusive overlays: entering one clears the other (its last
+  // selection is remembered, so re-entering restores it). Morphology is the always-on base layer, so
+  // its tab leaves the active overlay alone — only the docked controls swap. Re-clicking the docked
+  // tab toggles it off (an atlas/function overlay is cleared back to the bare morphology base).
+  const selectTab = (tab: 'atlas' | 'morphology' | 'function'): void => {
+    if (dockedTab === tab) {
+      dockedTab = null
+      if (tab === 'atlas') void selectAtlas(null)
+      else if (tab === 'function') void selectFunction(null)
+      updateTabUI()
+      return
+    }
+    dockedTab = tab
+    if (tab === 'atlas') {
+      void selectFunction(null) // hide the function overlay (keeps lastFuncChoice)
+      void selectAtlas(lastAtlasSel) // restore the atlas overlay
+    } else if (tab === 'function') {
+      void selectAtlas(null) // hide the atlas overlay (keeps lastAtlasSel)
+      void selectFunction(lastFuncChoice) // restore the function overlay
+    }
+    // morphology: overlay unchanged — the base persists under any active atlas/function overlay.
+    updateTabUI()
+  }
+
+  atlasBtn.addEventListener('click', () => selectTab('atlas'))
+  morphBtn.addEventListener('click', () => selectTab('morphology'))
+  functionBtn.addEventListener('click', () => selectTab('function'))
 
   // Anatomy report: all ARM levels + D99 at the crosshair (sampled from report-only volumes).
   let reportSpecs: Array<{ key: string; label: string; byId: Map<number, AtlasLabel> }> = []
@@ -838,7 +925,7 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
                 ['I', ijk ? String(ijk[0]) : '—'],
                 ['J', ijk ? String(ijk[1]) : '—'],
                 ['K', ijk ? String(ijk[2]) : '—'],
-                ['Hemisphere', hemiNode ? (hemiNode.hemi === 0 ? 'Left' : 'Right') : '—'],
+                ['hemisphere', hemiNode ? (hemiNode.hemi === 0 ? 'left' : 'right') : '—'],
               ]),
             )
           }
@@ -859,21 +946,27 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
       // (re)build the atlas panel for this subject; start with no atlas visible.
       atlasPanel?.element.remove()
       atlasPanel = createAtlasPanel(manifest, {
-        onSelect: (sel) => void selectAtlas(sel),
+        onSelect: (sel) => {
+          lastAtlasSel = sel
+          void selectAtlas(sel)
+        },
         onOpacity: (v) => {
           atlasOpacity = v
           view!.setAtlasOpacity(v) // slices volume
           view!.setSurfaceOverlayOpacity(v) // surface layer
         },
       })
-      main.append(atlasPanel.element)
+      sidePicker.append(atlasPanel.element)
       await selectAtlas(null)
       loadReportSpecs(manifest)
 
       // (re)build the function panel for this subject.
       functionPanel?.element.remove()
       functionPanel = createFunctionPanel(manifest, {
-        onSelect: (choice) => void selectFunction(choice),
+        onSelect: (choice) => {
+          lastFuncChoice = choice
+          void selectFunction(choice)
+        },
         onThreshold: (v) => {
           funcThreshold = v
           applyFunctionNow()
@@ -891,7 +984,7 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
           void applyFunctionSurface()
         },
       })
-      main.append(functionPanel.element)
+      sidePicker.append(functionPanel.element)
       funcChoice = null
       loadMorphology(manifest)
 
@@ -906,6 +999,7 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
       morphPanel = createMorphologyPanel({
         onDisplay: (m) => {
           morphMetric = m
+          morphCaption.textContent = morphBaseCaption(m)
           view?.applyMorphologyDisplay(morphDisplay())
           syncMorphRange()
         },
@@ -934,8 +1028,16 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
           syncMorphRange()
         },
       })
-      main.append(morphPanel.element)
+      sidePicker.append(morphPanel.element)
       syncMorphRange()
+
+      // Start each subject base-only: no overlay drawn, no picker docked (bare morphology base).
+      dockedTab = null
+      lastAtlasSel = null
+      lastFuncChoice = null
+      funcCaption.textContent = 'Select a function map.'
+      morphCaption.textContent = morphBaseCaption(morphMetric)
+      updateTabUI()
 
       main.classList.add('monkey-loaded')
       hideLoading()
@@ -1070,7 +1172,10 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
     surfacePane.addEventListener('pointercancel', endDrag, true)
   }
 
-  window.addEventListener('resize', () => view?.resize())
+  window.addEventListener('resize', () => {
+    view?.resize()
+    updateVisualField()
+  })
 
   // Boot: ensure sources are loaded, then populate.
   sources

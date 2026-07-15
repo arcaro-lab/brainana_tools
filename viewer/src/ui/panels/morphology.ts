@@ -1,6 +1,6 @@
-// Floating "Morphology" panel: choose the surface shading metric (curvature / sulcal depth /
-// thickness / none), the curvature style (binary FreeSurfer vs continuous gray), the yellow
-// marker mode, and the colour range (with an "Auto 2.5–97.5%" button + symmetric-around-zero).
+// Docked "Morphology" picker (top of the side panel): choose the surface shading metric (curvature /
+// sulcal depth / thickness / none), the curvature style (binary FreeSurfer vs continuous gray), the
+// yellow marker mode, and the colour range (with an "Auto 2.5–97.5%" button + symmetric-around-zero).
 import { h } from '../dom.ts'
 import type { MorphologyDisplayMetric, MorphologyMetric, CurvatureStyle } from '../../niivue/multiView.ts'
 
@@ -126,15 +126,13 @@ export function createMorphologyPanel(cb: MorphologyPanelCallbacks): MorphologyP
     h('div', { class: 'chip-row' }, [autoBtn, symChip]),
   ])
 
-  const closeBtn = h('button', { type: 'button', class: 'float-panel-close', title: 'Close' }, ['×']) as HTMLButtonElement
-  const element = h('div', { class: 'float-panel', hidden: true }, [
-    h('div', { class: 'float-panel-head' }, ['Morphology', closeBtn]),
+  const element = h('div', { class: 'side-panel', hidden: true }, [
+    h('div', { class: 'side-panel-head' }, ['Morphology']),
     h('div', { class: 'field' }, [h('span', {}, ['Display']), displayRow]),
     styleField,
     h('div', { class: 'field' }, [h('span', {}, ['Yellow marker']), markerRow]),
     rangeField,
   ])
-  closeBtn.addEventListener('click', () => (element.hidden = true))
 
   // Initial active states.
   setActiveMetric('curvature')

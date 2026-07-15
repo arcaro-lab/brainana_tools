@@ -1,5 +1,6 @@
-// Floating "Function" panel: pick a retinotopy (Polar/Eccentricity) or somatotopy (Phase)
-// map, adjust the F-threshold (bounds scanned from the selected F-stat frame) + opacity.
+// Docked "Function" picker (top of the side panel): pick a retinotopy (Polar/Eccentricity) or
+// somatotopy (Phase) map, adjust the F-threshold (bounds scanned from the selected F-stat frame) +
+// opacity.
 import { functionalModes, type FunctionalKind, type FunctionalMode } from '../../data/functional.ts'
 import type { Manifest } from '../../types.ts'
 import { h } from '../dom.ts'
@@ -67,15 +68,13 @@ export function createFunctionPanel(manifest: Manifest, cb: FunctionPanelCallbac
   const brightness = h('input', { type: 'range', min: '0.5', max: '2', step: '0.05', value: '1.25' }) as HTMLInputElement
   brightness.addEventListener('input', () => cb.onBrightness(Number(brightness.value)))
 
-  const closeBtn = h('button', { type: 'button', class: 'float-panel-close', title: 'Close' }, ['×']) as HTMLButtonElement
-  const element = h('div', { class: 'float-panel', hidden: true }, [
-    h('div', { class: 'float-panel-head' }, ['Function', closeBtn]),
+  const element = h('div', { class: 'side-panel', hidden: true }, [
+    h('div', { class: 'side-panel-head' }, ['Function']),
     row,
     h('div', { class: 'field' }, [h('span', {}, ['F-threshold ', threshLabel]), thresh]),
     h('label', { class: 'field' }, [h('span', {}, ['Opacity']), opacity]),
     h('label', { class: 'field' }, [h('span', {}, ['Surface brightness']), brightness]),
   ])
-  closeBtn.addEventListener('click', () => (element.hidden = true))
 
   return {
     element,

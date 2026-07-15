@@ -1,4 +1,5 @@
-// Floating "Atlases" panel: pick an ARM level (1-6) or D99, adjust overlay opacity, or clear.
+// Docked "Atlases" picker (top of the side panel): pick an ARM level (1-6) or D99, adjust overlay
+// opacity, or clear.
 import type { Manifest } from '../../types.ts'
 import { h } from '../dom.ts'
 
@@ -46,15 +47,11 @@ export function createAtlasPanel(manifest: Manifest, cb: AtlasPanelCallbacks): A
   const opacity = h('input', { type: 'range', min: '0', max: '1', step: '0.05', value: '0.7' }) as HTMLInputElement
   opacity.addEventListener('input', () => cb.onOpacity(Number(opacity.value)))
 
-  const closeBtn = h('button', { type: 'button', class: 'float-panel-close', title: 'Close' }, ['×']) as HTMLButtonElement
-  const element = h('div', { class: 'float-panel', hidden: true }, [
-    h('div', { class: 'float-panel-head' }, ['Atlases', closeBtn]),
+  const element = h('div', { class: 'side-panel', hidden: true }, [
+    h('div', { class: 'side-panel-head' }, ['Atlases']),
     row,
     h('label', { class: 'field' }, [h('span', {}, ['Overlay opacity']), opacity]),
   ])
-  closeBtn.addEventListener('click', () => {
-    element.hidden = true
-  })
 
   return {
     element,
