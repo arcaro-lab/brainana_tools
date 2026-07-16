@@ -241,7 +241,7 @@ export function createServer({ token = null, distRoot = null, initialSources = [
 
       // ---- Filesystem browse: list subdirectories of an absolute path so the Sources dialog
       // can offer a folder picker for the local-source form (no source exists yet, so this is
-      // deliberately unscoped). Grants no more reach than the "Add local" form already does —
+      // deliberately unscoped). Grants no more reach than the "Add local dataset" form already does —
       // that form accepts any absolute path as a readable root — and rides the same loopback
       // bind + token guard as every other /api route above.
       if (pathname === '/api/fs/browse' && req.method === 'GET') {

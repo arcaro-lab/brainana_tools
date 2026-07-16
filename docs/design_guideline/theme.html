@@ -133,7 +133,7 @@ input[type="range"] { accent-color: var(--accent); width: 150px; }
 .legend-label { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .legend-row.off { opacity: .42; }
 dl.mini { display: grid; grid-template-columns: max-content 1fr; gap: 5px 14px; margin: 0; font-size: 12.5px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-md); padding: 12px 14px; box-shadow: var(--shadow); }
-dl.mini dt { color: var(--muted); }
+dl.mini dt { color: var(--muted); text-align: right; }
 dl.mini dd { margin: 0; font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
 /* ============================================================
@@ -192,7 +192,7 @@ select.narrow { width: 104px; }
 .info-col:last-child { border-right: 0; }
 .info-col h3 { margin: 0 0 9px; font-size: 12px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
 .info-col dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 5px 12px; font-size: 12px; line-height: 1.35; }
-.info-col dt { color: var(--muted); }
+.info-col dt { color: var(--muted); text-align: right; }
 .info-col dd { margin: 0; font-family: var(--mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .atlas-report-row { display: grid; grid-template-columns: 74px 40px 1fr; align-items: baseline; gap: 8px; padding: 2px 4px; border-radius: 3px; font-size: 11px; }
 .atlas-report-row:nth-child(odd) { background: rgba(255,240,210,.03); }
@@ -273,7 +273,7 @@ select.narrow { width: 104px; }
       <span class="cap">Buttons</span>
       <div class="rowline"><button class="btn-primary">Dataset</button><button class="ghost">Close</button><button class="ghost sm">Invert</button></div>
       <span class="cap">Panel toggles</span>
-      <div class="rowline"><button class="panel-btn active">Atlases</button><button class="panel-btn">Morphology</button><button class="panel-btn">Function</button><button class="panel-btn" disabled>Export</button></div>
+      <div class="rowline"><button class="panel-btn active">Atlases</button><button class="panel-btn">Morphology</button><button class="panel-btn">Func Map</button><button class="panel-btn" disabled>Export</button></div>
       <span class="cap">View presets</span>
       <div class="rowline"><button class="view-btn">Lat</button><button class="view-btn">Med</button><button class="view-btn">Vent</button><button class="view-btn">Dor</button></div>
       <span class="cap">Chips &amp; badges</span>
@@ -324,7 +324,7 @@ select.narrow { width: 104px; }
           <label class="tb-field"><input class="checkbox" type="checkbox" checked /> RH</label>
           <div class="views"><button class="view-btn">Lat</button><button class="view-btn">Med</button><button class="view-btn">Vent</button><button class="view-btn">Dor</button><button class="view-btn">Ant</button><button class="view-btn">Pos</button></div>
         </div>
-        <div class="tb-cell panels"><button class="panel-btn active">Atlases</button><button class="panel-btn">Morphology</button><button class="panel-btn active">Function</button></div>
+        <div class="tb-cell panels"><button class="panel-btn active">Atlases</button><button class="panel-btn">Morphology</button><button class="panel-btn active">Func Map</button></div>
         <div class="tb-cell panels"><button class="panel-btn" disabled>Imported</button><button class="panel-btn" disabled>Import</button><button class="panel-btn" disabled>Export</button></div>
       </header>
 
@@ -370,7 +370,7 @@ select.narrow { width: 104px; }
             <div class="atlas-report-row"><span class="atlas-report-name">D99</span><span class="atlas-report-id">115</span><span class="atlas-report-label">V1</span></div>
           </div>
           <div class="info-col"><h3>Surface</h3><dl><dt>Geometry</dt><dd>Inflated</dd><dt>Hemisphere</dt><dd>Left</dd><dt>Vertex</dt><dd>48213</dd><dt>Distance</dt><dd>0.42 mm</dd><dt>Curvature</dt><dd>-0.08</dd><dt>Thickness</dt><dd>2.10 mm</dd></dl></div>
-          <div class="info-col"><h3>Function</h3><dl><dt>Polar angle</dt><dd>1.82 rad</dd><dt>Polar F</dt><dd>12.40</dd><dt>Eccentricity</dt><dd>3.60°</dd><dt>Ecc F</dt><dd>9.10</dd><dt>Visual X</dt><dd>-1.40</dd><dt>Visual Y</dt><dd>2.90</dd></dl></div>
+          <div class="info-col"><h3>Func Map</h3><dl><dt>Polar angle</dt><dd>1.82 rad</dd><dt>Polar F</dt><dd>12.40</dd><dt>Eccentricity</dt><dd>3.60°</dd><dt>Ecc F</dt><dd>9.10</dd><dt>Visual X</dt><dd>-1.40</dd><dt>Visual Y</dt><dd>2.90</dd></dl></div>
           <div class="info-col"><h3>Visual field</h3>
             <label class="neighborhood"><span>Neighborhood</span><select><option>3 × 3 × 3</option></select></label>
             <canvas class="vf-canvas" width="300" height="300"></canvas>
@@ -379,7 +379,7 @@ select.narrow { width: 104px; }
       </main>
 
       <div class="float-panel">
-        <div class="float-head">Function <button class="x">×</button></div>
+        <div class="float-head">Func Map <button class="x">×</button></div>
         <div class="chip-row"><button class="chip">None</button><button class="chip active">Polar</button><button class="chip">Eccentricity</button><button class="chip">Phase</button></div>
         <div class="field"><span>F-threshold <span class="val">F ≥ 5.00</span></span><input type="range" min="0" max="20" value="5" step="0.1" /></div>
         <div class="field"><span>Opacity <span class="val">0.85</span></span><input type="range" min="0" max="1" value="0.85" step="0.05" /></div>

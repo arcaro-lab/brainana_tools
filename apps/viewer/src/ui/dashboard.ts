@@ -43,7 +43,7 @@ const SURFACE_ORDER = ['pial', 'white', 'smoothwm', 'inflated', 'sphere'] as con
 const SURFACE_LABELS: Record<string, string> = {
   pial: 'pial',
   white: 'white',
-  smoothwm: 'smoothWM',
+  smoothwm: 'smoothwm',
   inflated: 'inflated',
   sphere: 'sphere',
 }
@@ -99,22 +99,45 @@ function dlRows(pairs: Array<[string, string | Node]>): HTMLDListElement {
   for (const [label, value] of pairs) dl.append(h('dt', {}, [label]), h('dd', {}, [value]))
   return dl
 }
-const LAYOUTS: Array<{ k: Layout; glyph: string; title: string }> = [
-  { k: 'grid', glyph: '#', title: '2×2 grid (3 planes + surface)' },
-  { k: 'row', glyph: '▬', title: 'Surface on top, planes in a row' },
-  { k: 'column', glyph: '▮', title: 'Surface on top, planes in a column' },
+function layoutIcon(k: Layout): SVGSVGElement {
+  const ns = 'http://www.w3.org/2000/svg'
+  const svg = document.createElementNS(ns, 'svg')
+  svg.setAttribute('viewBox', '0 0 24 18')
+  svg.setAttribute('aria-hidden', 'true')
+  const r = (x: number, y: number, w: number, h: number): SVGRectElement => {
+    const rect = document.createElementNS(ns, 'rect')
+    rect.setAttribute('x', String(x))
+    rect.setAttribute('y', String(y))
+    rect.setAttribute('width', String(w))
+    rect.setAttribute('height', String(h))
+    rect.setAttribute('rx', '0.5')
+    return rect
+  }
+  if (k === 'grid') {
+    svg.append(r(1, 1, 10, 7), r(13, 1, 10, 7), r(1, 10, 10, 7), r(13, 10, 10, 7))
+  } else if (k === 'row') {
+    svg.append(r(1, 1, 22, 8), r(1, 11, 6, 6), r(9, 11, 6, 6), r(17, 11, 6, 6))
+  } else {
+    svg.append(r(1, 1, 8, 4.5), r(1, 6.75, 8, 4.5), r(1, 12.5, 8, 4.5), r(11, 1, 12, 16))
+  }
+  return svg
+}
+const LAYOUTS: Array<{ k: Layout; icon: SVGSVGElement; title: string }> = [
+  { k: 'grid', icon: layoutIcon('grid'), title: '2×2 grid (3 planes + surface)' },
+  { k: 'row', icon: layoutIcon('row'), title: 'Surface on top, planes in a row' },
+  { k: 'column', icon: layoutIcon('column'), title: 'Surface on top, planes in a column' },
 ]
 // Only the wired category tabs are shown. Imported/Import/Export are deferred Phase-3 work and
 // were previously rendered permanently-disabled (reading as broken) — hidden until implemented.
 const PANEL_BUTTONS = ['atlas', 'morphology', 'func map']
 // Camera view presets shown in the surf row (Req 4). Lateral/Medial are hemisphere-aware.
 const VIEW_PRESETS: Array<{ k: 'lateral' | 'medial' | 'ventral' | 'dorsal' | 'anterior' | 'posterior'; label: string }> = [
-  { k: 'lateral', label: 'Lat' },
-  { k: 'medial', label: 'Med' },
-  { k: 'ventral', label: 'Vent' },
-  { k: 'dorsal', label: 'Dor' },
-  { k: 'anterior', label: 'Ant' },
-  { k: 'posterior', label: 'Pos' },
+  { k: 'lateral', label: 'lat' },
+  { k: 'medial', label: 'med' },
+  { k: 'ventral', label: 'vent' },
+  { k: 'dorsal', label: 'dor' },
+  { k: 'anterior', label: 'ant' },
+  { k: 'posterior', label: 'pos' },
 ]
 
 // Prefer a FreeSurfer volume (norm.mgz) as the default base — same space as the surfaces.
@@ -156,8 +179,8 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
   root.innerHTML = ''
 
   // --- top bar: two rows (vol row + surf row), surf field aligned under the vol field ---
-  const monkeySelect = h('select', { id: 'monkey-select' }, [h('option', { value: '' }, ['Select monkey…'])])
-  const datasetBtn = h('button', { type: 'button', class: 'primary' }, ['Dataset'])
+  const monkeySelect = h('select', { id: 'monkey-select' }, [h('option', { value: '' }, ['select monkey…'])])
+  const datasetBtn = h('button', { type: 'button', class: 'primary' }, ['dataset'])
   const volCheck = h('input', { type: 'checkbox' }) as HTMLInputElement
   volCheck.checked = true
   const volSelect = h('select', { title: 'Base volume (FreeSurfer mri/)', class: 'narrow' })
@@ -176,7 +199,7 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
   neighborhoodSelect.value = '1'
 
   const layoutBtns = LAYOUTS.map((l) => {
-    const b = h('button', { type: 'button', class: 'layout-btn', title: l.title }, [l.glyph])
+    const b = h('button', { type: 'button', class: 'layout-btn', title: l.title }, [l.icon])
     b.dataset.layout = l.k
     return b
   })
@@ -201,7 +224,7 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
   crosshairCheck.addEventListener('change', () => view?.setCrosshairVisible(crosshairCheck.checked))
   orientCheck.addEventListener('change', () => view?.setSliceOrientationVisible(orientCheck.checked))
   const markerSize = createSlider({
-    label: 'Size',
+    label: 'size',
     min: 0.3,
     max: 3,
     step: 0.1,
@@ -212,10 +235,10 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
     },
   })
   const markerModeSel = selectField(
-    'Mode',
+    'mode',
     [
       { value: 'crosshair3d', label: '3D crosshair' },
-      { value: 'nearestNode', label: 'Nearest vertex' },
+      { value: 'nearestNode', label: 'nearest vertex' },
     ],
     (value) => {
       markerMode = value as MarkerMode
@@ -242,7 +265,7 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
     tbDivide(),
     // col 2: Dataset (row 1) · Monkey (row 2)
     h('div', { class: 'tb-cell' }, [datasetBtn]),
-    h('div', { class: 'tb-cell' }, [h('label', { class: 'tb-field' }, ['Monkey', monkeySelect])]),
+    h('div', { class: 'tb-cell' }, [h('label', { class: 'tb-field' }, ['monkey', monkeySelect])]),
     tbDivide(),
     // col 3: vol (row 1) · surf + LH/RH (row 2)
     h('div', { class: 'tb-cell' }, [h('label', { class: 'tb-field inline' }, [volCheck, h('span', {}, ['vol']), volSelect])]),
@@ -262,7 +285,7 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
       h('label', { class: 'tb-field inline' }, [crosshairCheck, h('span', {}, ['crosshair'])]),
       h('label', { class: 'tb-field inline' }, [orientCheck, h('span', {}, ['AP/SI/LR'])]),
     ]),
-    h('div', { class: 'tb-cell' }, [
+    h('div', { class: 'tb-cell marker-controls' }, [
       h('label', { class: 'tb-field inline' }, [markerCheck, h('span', {}, ['marker'])]),
       markerSize.element,
       markerModeSel.element,
@@ -306,13 +329,13 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
     h('div', { class: 'info-col' }, [
       h('div', { class: 'vf-header' }, [
         h('h3', {}, ['Visual field']),
-        h('label', { class: 'neighborhood-control' }, [h('span', {}, ['Neighborhood']), neighborhoodSelect]),
+        h('label', { class: 'neighborhood-control' }, [h('span', {}, ['neighborhood']), neighborhoodSelect]),
       ]),
       h('canvas', { id: 'visual-field-canvas', class: 'vf-canvas' }),
       h('div', { id: 'report-visual-note', class: 'muted' }, ['Add retinotopy in FUNC MAP first']),
     ]),
   ])
-  const placeholderText = h('p', { class: 'placeholder-text' }, ['Select a dataset and then a monkey to begin'])
+  const placeholderText = h('p', { class: 'placeholder-text' }, ['Select a dataset, then choose a monkey to begin'])
   const asciiEl = h('pre', { class: 'monkey-ascii' }, [BRAINANA_ASCII_LOGO])
   const placeholderContent = h('div', { class: 'placeholder-content' }, [asciiEl, placeholderText])
   const placeholder = h('div', { class: 'monkey-placeholder' }, [placeholderContent])
@@ -836,14 +859,14 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
       dl.append(h('dt', {}, ['valid voxels']), h('dd', { id: 'func-valid' }, ['—']), h('dt', {}, ['local spread (°)']), h('dd', { id: 'func-spread' }, ['—']))
       el.append(dl)
     } else {
-      const fstat = view.sampleFunctionFrame(vox, f.fstat)
-      el.append(
-        dlRows([
-          ['body position', num(view.sampleFunctionFrame(vox, f.phase))],
-          ['somatotopy F', num(fstat)],
-          ['status', fstat >= funcThreshold ? 'passes threshold' : 'below threshold'],
-        ]),
+      const dl = h('dl', { class: 'dl-paired' })
+      dl.append(
+        h('dt', {}, ['body position']),
+        h('dd', {}, [num(view.sampleFunctionFrame(vox, f.phase))]),
+        h('dt', {}, ['F']),
+        h('dd', {}, [num(view.sampleFunctionFrame(vox, f.fstat))]),
       )
+      el.append(dl)
     }
   }
 
@@ -1021,6 +1044,9 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
         clip: 'range',
         clipDomain: { min: funcChoice.mode.calMin, max: funcChoice.mode.calMax },
         clipValue: { lo: funcClipLo, hi: funcClipHi },
+        // Somatotopy's 0–100 axis is a body map (foot → hand → face); anchor the bar with those
+        // parts so the numbers read as anatomy. Retinotopy uses wheel/rings legends (no bar ticks).
+        barTicks: funcChoice.kind === 'somatotopy' ? ['foot', 'hand', 'face'] : undefined,
       })
     } else if (target === 'morphology') {
       const metric = morphActiveMetric()
@@ -1356,7 +1382,7 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
         // offers (brainana maps + built-ins), then mount the shared color-display section. The
         // synthetic "Labels" entry (categorical restore) is only meaningful for the atlas target.
         const built = buildColormapRegistry(availableColormaps(view.slices))
-        colormapInfos = [{ key: LABELS_KEY, label: 'Labels (categorical)', group: 'Brainana' }, ...built]
+        colormapInfos = [{ key: LABELS_KEY, label: 'labels (categorical)', group: 'Brainana' }, ...built]
         const assets = buildColormapAssets(view.slices, built.map((c) => c.key))
         colormapGradients = { ...assets.gradients, [LABELS_KEY]: 'repeating-linear-gradient(90deg, #c0563a 0 12%, #d8a24c 12% 24%, #8bbf6e 24% 36%, #4aa0c0 36% 48%, #8f6ed0 48% 60%)' }
         colormapLuts = assets.luts
@@ -1490,7 +1516,7 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
     const run = ++monkeyRun
     const list = sources.list()
     const frag = document.createDocumentFragment()
-    frag.append(h('option', { value: '' }, ['Select monkey…']))
+    frag.append(h('option', { value: '' }, ['select monkey…']))
     for (const src of list) {
       let monkeys: MonkeySummary[] = []
       try {
@@ -1517,7 +1543,14 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
     if (sourceId && subjectId) void loadSubject(sourceId, subjectId)
   })
 
-  datasetBtn.addEventListener('click', () => mountSourcesDialog(deps, () => void repopulateMonkeys()))
+  datasetBtn.addEventListener('click', () =>
+    mountSourcesDialog(deps, () => void repopulateMonkeys(), () => {
+      // Guide the eye to the now-populated monkey picker after the Datasets dialog closes.
+      monkeySelect.focus()
+      monkeySelect.classList.add('pulse')
+      setTimeout(() => monkeySelect.classList.remove('pulse'), 1200)
+    }),
+  )
   sources.subscribe(() => void repopulateMonkeys())
 
   // Arrow keys nudge the crosshair ±1.5 mm (Left/Right = x, Up/Down = superior/inferior).

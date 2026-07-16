@@ -36,10 +36,10 @@ ok('raising the threshold progressively removes weaker voxels')
 const retino = functionalModes('retinotopy', { polar: 0, polarF: 1, eccentricity: 2, eccentricityF: 3 })
 assert.deepEqual(
   retino.map((m) => [m.label, m.valueFrame, m.fFrame, m.colormap]),
-  [['Polar angle', 0, 1, 'brainana_polar_angle'], ['Eccentricity', 2, 3, 'brainana_eccentricity']],
+  [['polar angle', 0, 1, 'brainana_polar_lr'], ['eccentricity', 2, 3, 'brainana_eccentricity']],
 )
 const somato = functionalModes('somatotopy', { phase: 0, fstat: 1 })
-assert.deepEqual(somato.map((m) => [m.label, m.valueFrame, m.fFrame, m.colormap]), [['Phase', 0, 1, 'brainana_somatotopy']])
+assert.deepEqual(somato.map((m) => [m.label, m.valueFrame, m.fFrame, m.colormap]), [['body position', 0, 1, 'brainana_somatotopy']])
 assert.equal(somato[0].colormap, 'brainana_somatotopy', 'somatotopy uses the reversed blue->red LUT')
 // display ranges have a slightly-negative cal_min (reserves the transparent LUT slot for masking)
 assert.ok(retino[0].calMin < 0 && retino[0].calMax > 3, 'polar cal range')

@@ -11,6 +11,9 @@ export interface ColorbarState {
   clipLow?: number | null
   clipHigh?: number | null
   unit?: string
+  /** Optional [min, mid, max] tick labels that replace the numeric ticks with semantic anchors
+   *  (e.g. somatotopy's foot / hand / face). Clip shading still uses the numeric min/max. */
+  ticks?: [string, string, string]
 }
 
 export interface Colorbar {
@@ -49,9 +52,14 @@ export function createColorbar(label = 'Range'): Colorbar {
       element.hidden = false
       gradient.style.background = s.gradient
       const unit = s.unit ? ` ${s.unit}` : ''
-      tMin.textContent = fmt(s.min) + unit
-      tMid.textContent = fmt((s.min + s.max) / 2)
-      tMax.textContent = fmt(s.max) + unit
+      // Semantic tick labels (e.g. foot/hand/face) override the numeric readout when provided.
+      if (s.ticks) {
+        ;[tMin.textContent, tMid.textContent, tMax.textContent] = s.ticks
+      } else {
+        tMin.textContent = fmt(s.min) + unit
+        tMid.textContent = fmt((s.min + s.max) / 2)
+        tMax.textContent = fmt(s.max) + unit
+      }
       // Clip shading: dim the hidden bands at each end.
       const lo = s.clipLow ?? null
       const hi = s.clipHigh ?? null

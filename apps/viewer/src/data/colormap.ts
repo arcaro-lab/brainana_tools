@@ -27,26 +27,26 @@ export interface ColormapInfo {
 
 // The brainana custom LUTs (registered on every NiiVue instance by registerColormaps).
 export const BRAINANA_COLORMAPS: ColormapInfo[] = [
-  { key: 'brainana_eccentricity', label: 'Eccentricity', group: 'Brainana' },
-  { key: 'brainana_somatotopy', label: 'Somatotopy', group: 'Brainana' },
-  { key: 'brainana_polar_angle', label: 'Polar angle', group: 'Brainana', cyclic: true },
-  { key: 'brainana_polar_lr', label: 'Polar angle (L/R split)', group: 'Brainana', cyclic: true },
-  { key: 'brainana_curvature', label: 'Curvature', group: 'Brainana' },
+  { key: 'brainana_eccentricity', label: 'eccentricity', group: 'Brainana' },
+  { key: 'brainana_somatotopy', label: 'body position', group: 'Brainana' },
+  { key: 'brainana_polar_angle', label: 'polar angle', group: 'Brainana', cyclic: true },
+  { key: 'brainana_polar_lr', label: 'polar angle (L/R split)', group: 'Brainana', cyclic: true },
+  { key: 'brainana_curvature', label: 'curvature', group: 'Brainana' },
 ]
 
 // A curated subset of NiiVue's built-in maps offered in the picker (not the full built-in list —
 // just the ones that make sense for anatomical bases and statistical/continuous overlays).
 export const BUILTIN_COLORMAPS: ColormapInfo[] = [
-  { key: 'gray', label: 'Gray', group: 'Anatomical' },
-  { key: 'viridis', label: 'Viridis', group: 'Sequential' },
-  { key: 'plasma', label: 'Plasma', group: 'Sequential' },
-  { key: 'inferno', label: 'Inferno', group: 'Sequential' },
-  { key: 'magma', label: 'Magma', group: 'Sequential' },
-  { key: 'turbo', label: 'Turbo', group: 'Sequential' },
-  { key: 'hot', label: 'Hot', group: 'Sequential' },
-  { key: 'cool', label: 'Cool', group: 'Sequential' },
-  { key: 'warm', label: 'Warm', group: 'Sequential' },
-  { key: 'blue2red', label: 'Blue–Red', group: 'Diverging' },
+  { key: 'gray', label: 'gray', group: 'Anatomical' },
+  { key: 'viridis', label: 'viridis', group: 'Sequential' },
+  { key: 'plasma', label: 'plasma', group: 'Sequential' },
+  { key: 'inferno', label: 'inferno', group: 'Sequential' },
+  { key: 'magma', label: 'magma', group: 'Sequential' },
+  { key: 'turbo', label: 'turbo', group: 'Sequential' },
+  { key: 'hot', label: 'hot', group: 'Sequential' },
+  { key: 'cool', label: 'cool', group: 'Sequential' },
+  { key: 'warm', label: 'warm', group: 'Sequential' },
+  { key: 'blue2red', label: 'blue–red', group: 'Diverging' },
 ]
 
 // Static fallback registry (Brainana first, then a curated built-in subset). The live picker
@@ -70,7 +70,7 @@ export const GROUP_ORDER: ColormapGroup[] = [
 ]
 
 // Curated group + label for the well-known matplotlib / NiiVue built-ins (keyed lower-case).
-// Names not listed here fall back to a title-cased label in the "Other" group, so the picker
+// Names not listed here fall back to a lower-cased label in the "Other" group, so the picker
 // always lists everything nv.colormaps() reports without needing an exhaustive table.
 const CURATED: Record<string, { group: ColormapGroup; label?: string }> = {
   // Perceptually uniform sequential
@@ -80,8 +80,8 @@ const CURATED: Record<string, { group: ColormapGroup; label?: string }> = {
   magma: { group: 'Perceptually Uniform' },
   cividis: { group: 'Perceptually Uniform' },
   // Sequential
-  gray: { group: 'Anatomical', label: 'Gray' },
-  greys: { group: 'Sequential', label: 'Greys' },
+  gray: { group: 'Anatomical', label: 'gray' },
+  greys: { group: 'Sequential', label: 'greys' },
   bone: { group: 'Sequential' },
   hot: { group: 'Sequential' },
   cool: { group: 'Sequential' },
@@ -100,32 +100,31 @@ const CURATED: Record<string, { group: ColormapGroup; label?: string }> = {
   turbo: { group: 'Sequential' },
   jet: { group: 'Sequential' },
   // Diverging
-  blue2red: { group: 'Diverging', label: 'Blue–Red' },
+  blue2red: { group: 'Diverging', label: 'blue–red' },
   coolwarm: { group: 'Diverging' },
   bwr: { group: 'Diverging', label: 'BWR' },
   seismic: { group: 'Diverging' },
   spectral: { group: 'Diverging' },
   rdbu: { group: 'Diverging', label: 'RdBu' },
   rdylbu: { group: 'Diverging', label: 'RdYlBu' },
-  redyellowblue: { group: 'Diverging', label: 'Red–Yellow–Blue' },
+  redyellowblue: { group: 'Diverging', label: 'red–yellow–blue' },
   // Cyclic
   hsv: { group: 'Cyclic', label: 'HSV' },
   twilight: { group: 'Cyclic' },
   // Anatomical / neuro
-  x_rain: { group: 'Anatomical', label: 'X-Rain' },
+  x_rain: { group: 'Anatomical', label: 'x-rain' },
   surface: { group: 'Anatomical' },
   ct_kights: { group: 'Anatomical' },
 }
 
-// Title-case an arbitrary colormap key for display ("blue2red" → "Blue2red", "rd_bu" → "Rd Bu").
+// Lower-case display label for an arbitrary colormap key ("blue2red" → "blue2red", "rd_bu" → "rd bu").
+// Colormap names are shown lowercase like every other UI label (keys are already lowercase).
 export function prettifyLabel(key: string): string {
-  return key
-    .replace(/[_-]+/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase())
+  return key.replace(/[_-]+/g, ' ')
 }
 
 // Build the picker registry from the maps NiiVue actually offers: Brainana maps first, then every
-// available built-in mapped to its curated group/label (unknowns → title-cased "Other").
+// available built-in mapped to its curated group/label (unknowns → lower-cased "Other").
 export function buildColormapRegistry(availableKeys: string[]): ColormapInfo[] {
   const brainanaKeys = new Set(BRAINANA_COLORMAPS.map((c) => c.key))
   const builtins: ColormapInfo[] = []

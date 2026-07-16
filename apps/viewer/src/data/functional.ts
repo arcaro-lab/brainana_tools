@@ -33,13 +33,13 @@ export function functionalModes(kind: FunctionalKind, frames: Record<string, num
     const modes: FunctionalMode[] = []
     // Default to the left/right-hemifield split map (brainana_polar_lr); the smooth cyclic wheel
     // (brainana_polar_angle) stays a selectable option (see niivue/colormaps.ts).
-    if (frames.polar != null) modes.push({ label: 'Polar angle', valueFrame: frames.polar, fFrame: frames.polarF ?? null, colormap: 'brainana_polar_lr', calMin: POLAR_MIN, calMax: POLAR_MAX })
-    if (frames.eccentricity != null) modes.push({ label: 'Eccentricity', valueFrame: frames.eccentricity, fFrame: frames.eccentricityF ?? null, colormap: 'brainana_eccentricity', calMin: -0.0394, calMax: 10 })
+    if (frames.polar != null) modes.push({ label: 'polar angle', valueFrame: frames.polar, fFrame: frames.polarF ?? null, colormap: 'brainana_polar_lr', calMin: POLAR_MIN, calMax: POLAR_MAX })
+    if (frames.eccentricity != null) modes.push({ label: 'eccentricity', valueFrame: frames.eccentricity, fFrame: frames.eccentricityF ?? null, colormap: 'brainana_eccentricity', calMin: -0.0394, calMax: 10 })
     return modes
   }
   // somatotopy: reversed blue->red LUT so 0 is blue and 100 is red
   const modes: FunctionalMode[] = []
-  if (frames.phase != null) modes.push({ label: 'Phase', valueFrame: frames.phase, fFrame: frames.fstat ?? null, colormap: 'brainana_somatotopy', calMin: -0.3937, calMax: 100 })
+  if (frames.phase != null) modes.push({ label: 'body position', valueFrame: frames.phase, fFrame: frames.fstat ?? null, colormap: 'brainana_somatotopy', calMin: -0.3937, calMax: 100 })
   return modes
 }
 

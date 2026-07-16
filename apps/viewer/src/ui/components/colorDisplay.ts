@@ -33,6 +33,8 @@ export interface ColorDisplayTarget {
   clipDomain?: { min: number; max: number }
   clipValue?: { lo: number | null; hi: number | null }
   unit?: string
+  /** Bar-legend semantic tick labels [min, mid, max] (e.g. somatotopy's foot / hand / face). */
+  barTicks?: [string, string, string]
 }
 
 export interface ColorDisplay {
@@ -49,12 +51,12 @@ export function createColorDisplay(
 ): ColorDisplay {
   // Header doubles as a collapse toggle. Reset (restore the active overlay's defaults) sits inline
   // with the colormap row, not the header — it reads as "reset these colors".
-  const head = h('button', { type: 'button', class: 'color-display-head' }, ['Color display'])
-  const resetBtn = h('button', { type: 'button', class: 'ghost sm' }, ['Reset']) as HTMLButtonElement
+  const head = h('button', { type: 'button', class: 'color-display-head' }, ['color display'])
+  const resetBtn = h('button', { type: 'button', class: 'ghost sm' }, ['reset']) as HTMLButtonElement
   resetBtn.addEventListener('click', () => cb.onReset?.())
 
   const picker: ColormapPicker = createColormapPicker({ gradients, infos, onChange: (k) => cb.onColormap(k) })
-  const legend: Legend = createLegend('Legend')
+  const legend: Legend = createLegend('legend')
 
   let clipDomain = { min: 0, max: 1 }
   const displayRange: RangeControl = createRangeControl({
@@ -69,12 +71,12 @@ export function createColorDisplay(
       cb.onClipRange?.(lo, hi)
     },
   })
-  const displayField = h('div', { class: 'field' }, [h('span', {}, ['Display']), displayRange.element])
-  const clipRangeField = h('div', { class: 'field' }, [h('span', {}, ['Clip']), clipRange.element])
+  const displayField = h('div', { class: 'field' }, [h('span', {}, ['display']), displayRange.element])
+  const clipRangeField = h('div', { class: 'field' }, [h('span', {}, ['clip']), clipRange.element])
 
   const body = h('div', { class: 'color-display-body' }, [
     h('div', { class: 'field' }, [
-      h('div', { class: 'row' }, [h('span', { class: 'grow' }, ['Colormap']), resetBtn]),
+      h('div', { class: 'row' }, [h('span', { class: 'grow' }, ['colormap']), resetBtn]),
       picker.element,
     ]),
     legend.element,
@@ -107,6 +109,7 @@ export function createColorDisplay(
         clipLow: t.clipValue?.lo ?? null,
         clipHigh: t.clipValue?.hi ?? null,
         unit: t.unit,
+        ticks: t.barTicks,
       })
       // Display range
       displayField.hidden = t.showDisplayRange === false

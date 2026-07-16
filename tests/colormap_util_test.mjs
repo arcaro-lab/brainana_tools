@@ -25,7 +25,7 @@ assert.ok(COLORMAP_REGISTRY.every((c) => c.key && c.label && c.group), 'every en
 assert.equal(new Set(COLORMAP_REGISTRY.map((c) => c.key)).size, COLORMAP_REGISTRY.length, 'keys are unique')
 ok('COLORMAP_REGISTRY composes brainana + builtin maps with unique keys')
 
-assert.equal(colormapInfo('viridis')?.label, 'Viridis', 'lookup by key')
+assert.equal(colormapInfo('viridis')?.label, 'viridis', 'lookup by key')
 assert.equal(colormapInfo('nope'), undefined, 'unknown key -> undefined')
 assert.equal(colormapInfo('brainana_polar_angle')?.cyclic, true, 'polar angle flagged cyclic')
 ok('colormapInfo resolves keys and flags cyclic maps')
@@ -65,12 +65,12 @@ ok('colormapInfo resolves keys and flags cyclic maps')
   assert.equal(reg.find((c) => c.key === 'coolwarm')?.group, 'Diverging', 'coolwarm grouped')
   const weird = reg.find((c) => c.key === 'weird_map')
   assert.equal(weird?.group, 'Other', 'unknown -> Other')
-  assert.equal(weird?.label, 'Weird Map', 'unknown label title-cased')
-  ok('buildColormapRegistry orders brainana first, curates known maps, title-cases unknowns')
+  assert.equal(weird?.label, 'weird map', 'unknown label lower-cased')
+  ok('buildColormapRegistry orders brainana first, curates known maps, lower-cases unknowns')
 }
 
-assert.equal(prettifyLabel('blue2red'), 'Blue2red', 'prettify simple')
-assert.equal(prettifyLabel('rd_bu'), 'Rd Bu', 'prettify underscores')
-ok('prettifyLabel title-cases colormap keys')
+assert.equal(prettifyLabel('blue2red'), 'blue2red', 'prettify simple')
+assert.equal(prettifyLabel('rd_bu'), 'rd bu', 'prettify underscores')
+ok('prettifyLabel lower-cases colormap keys')
 
 console.log(`colormap_util_test: ${passed} checks passed`)

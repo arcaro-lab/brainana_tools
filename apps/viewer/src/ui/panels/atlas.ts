@@ -29,14 +29,14 @@ function parseKey(value: string): AtlasSelection | null {
 }
 
 export function createAtlasPanel(manifest: Manifest, cb: AtlasPanelCallbacks): AtlasPanel {
-  const options: SelectOption[] = [{ value: 'none', label: 'None' }]
+  const options: SelectOption[] = [{ value: 'none', label: 'none' }]
   for (let i = 1; i <= 6; i++) {
     if (manifest.atlases?.charm?.[String(i)]) options.push({ value: `ARM${i}`, label: `ARM${i}` })
   }
   if (manifest.atlases?.d99) options.push({ value: 'D990', label: 'D99' })
 
-  const picker = selectField('Atlas', options, (value) => cb.onSelect(parseKey(value)))
-  const opacity = createSlider({ label: 'Overlay opacity', min: 0, max: 1, step: 0.05, value: 0.7, onInput: (v) => cb.onOpacity(v) })
+  const picker = selectField('atlas', options, (value) => cb.onSelect(parseKey(value)))
+  const opacity = createSlider({ label: 'overlay opacity', min: 0, max: 1, step: 0.05, value: 0.7, onInput: (v) => cb.onOpacity(v) })
 
   const element = h('div', { class: 'side-panel', hidden: true }, [
     h('div', { class: 'side-panel-head' }, ['atlas']),

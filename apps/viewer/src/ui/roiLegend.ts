@@ -4,7 +4,9 @@
 import { displayLabel, labelColor, type AtlasLabel } from '../data/atlas.ts'
 import { h } from '@brainana/ui/dom.ts'
 
-const ROW_H = 22
+// Must equal the `.legend-row` height in style.css, which is `var(--ctl-h)` (the unified control
+// height, 20px). If --ctl-h changes, update this constant to match or the virtual scroll drifts.
+const ROW_H = 20
 const OVERSCAN = 6
 
 interface Row {
@@ -32,9 +34,9 @@ export class RoiLegend {
 
   constructor(root: HTMLElement, cb: RoiLegendCallbacks) {
     this.#cb = cb
-    const showAll = h('button', { type: 'button', class: 'ghost sm' }, ['Show all'])
-    const hideAll = h('button', { type: 'button', class: 'ghost sm' }, ['Hide all'])
-    const invert = h('button', { type: 'button', class: 'ghost sm' }, ['Invert'])
+    const showAll = h('button', { type: 'button', class: 'ghost sm' }, ['show all'])
+    const hideAll = h('button', { type: 'button', class: 'ghost sm' }, ['hide all'])
+    const invert = h('button', { type: 'button', class: 'ghost sm' }, ['invert'])
     showAll.addEventListener('click', () => this.#bulk('show'))
     hideAll.addEventListener('click', () => this.#bulk('hide'))
     invert.addEventListener('click', () => this.#bulk('invert'))

@@ -1,5 +1,5 @@
 // Docked "function" picker (top of the side panel): pick a retinotopy (Polar/Eccentricity) or
-// somatotopy (Phase) map from a dropdown, and tune the F-stat threshold, opacity, and surface
+// somatotopy (Body position) map from a dropdown, and tune the F-stat threshold, opacity, and surface
 // brightness. Color controls (colormap, display range, clip, legend) live in the shared "Color
 // display" section at the bottom of the side panel, not here.
 import { functionalModes, type FunctionalKind, type FunctionalMode } from '../../data/functional.ts'
@@ -29,7 +29,7 @@ export const choiceKey = (c: FunctionChoice): string => `${c.kind}:${c.mode.labe
 
 export function createFunctionPanel(manifest: Manifest, cb: FunctionPanelCallbacks): FunctionPanel {
   const choices = new Map<string, FunctionChoice>()
-  const options: SelectOption[] = [{ value: 'none', label: 'None' }]
+  const options: SelectOption[] = [{ value: 'none', label: 'none' }]
 
   const kinds: FunctionalKind[] = []
   if (manifest.function?.retinotopy) kinds.push('retinotopy')
@@ -45,7 +45,7 @@ export function createFunctionPanel(manifest: Manifest, cb: FunctionPanelCallbac
     }
   }
 
-  const picker = selectField('Map', options, (value) => cb.onSelect(value === 'none' ? null : (choices.get(value) ?? null)))
+  const picker = selectField('map', options, (value) => cb.onSelect(value === 'none' ? null : (choices.get(value) ?? null)))
 
   const thresh: Slider = createSlider({
     label: 'F-stat',
@@ -56,13 +56,13 @@ export function createFunctionPanel(manifest: Manifest, cb: FunctionPanelCallbac
     disabled: true,
     onInput: (v) => cb.onThreshold(v),
   })
-  const opacity = createSlider({ label: 'Opacity', min: 0, max: 1, step: 0.05, value: 1, onInput: (v) => cb.onOpacity(v) })
+  const opacity = createSlider({ label: 'opacity', min: 0, max: 1, step: 0.05, value: 1, onInput: (v) => cb.onOpacity(v) })
   // Function on the 3D surface is always shown for the active map; only the LUT brightness is
   // adjustable (blends toward white).
-  const brightness = createSlider({ label: 'Surface brightness', min: 0.5, max: 2, step: 0.05, value: 1, onInput: (v) => cb.onBrightness(v) })
+  const brightness = createSlider({ label: 'surface brightness', min: 0.5, max: 2, step: 0.05, value: 1, onInput: (v) => cb.onBrightness(v) })
 
   const element = h('div', { class: 'side-panel', hidden: true }, [
-    h('div', { class: 'side-panel-head' }, ['function']),
+    h('div', { class: 'side-panel-head' }, ['func map']),
     picker.element,
     thresh.element,
     opacity.element,

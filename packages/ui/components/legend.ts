@@ -20,6 +20,8 @@ export interface LegendState {
   clipLow?: number | null
   clipHigh?: number | null
   unit?: string
+  /** Bar shape only: [min, mid, max] semantic tick labels (wheel/rings ignore this). */
+  ticks?: [string, string, string]
 }
 
 export interface Legend {
@@ -155,7 +157,7 @@ export function createLegend(label = 'Legend'): Legend {
         canvas.hidden = true
         caption.hidden = true
         bar.element.hidden = false
-        bar.set({ gradient: s.gradient ?? 'linear-gradient(90deg,#000,#000)', min: s.min, max: s.max, clipLow: s.clipLow, clipHigh: s.clipHigh, unit: s.unit })
+        bar.set({ gradient: s.gradient ?? 'linear-gradient(90deg,#000,#000)', min: s.min, max: s.max, clipLow: s.clipLow, clipHigh: s.clipHigh, unit: s.unit, ticks: s.ticks })
         return
       }
       // wheel / rings

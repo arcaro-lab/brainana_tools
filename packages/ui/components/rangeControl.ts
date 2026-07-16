@@ -122,8 +122,8 @@ export function createRangeControl(opts: RangeControlOptions): RangeControl {
   const element = h('div', { class: 'range-control field' }, [
     ...(opts.label ? [h('span', {}, [opts.label])] : []),
     h('div', { class: 'range-pair' }, [
-      h('label', { class: 'range-side' }, [h('span', { class: 'range-cap' }, ['Min ', minVal]), minInput]),
-      h('label', { class: 'range-side' }, [h('span', { class: 'range-cap' }, ['Max ', maxVal]), maxInput]),
+      h('label', { class: 'range-side' }, [h('span', { class: 'range-cap' }, ['min ', minVal]), minInput]),
+      h('label', { class: 'range-side' }, [h('span', { class: 'range-cap' }, ['max ', maxVal]), maxInput]),
     ]),
     ...(actions.length ? [h('div', { class: 'chip-row range-actions' }, actions)] : []),
   ])

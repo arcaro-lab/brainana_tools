@@ -67,7 +67,16 @@
   --sp-7: 20px;
   --sp-8: 24px;
 
+  /* ---- control density (single place to tune panel tightness) ----
+     Encodes the "compact & unified" layout decision so every control row reads as one system.
+     See docs/design_guideline/layout-density.md for the rationale + rules. */
+  --ctl-h: 20px;              /* height of interactive controls: buttons, select, text/number input, cmap-trigger, slider number box, legend row */
+  --row-gap: var(--sp-2);     /* 6px — vertical gap between control rows within a section/group/panel */
+  --field-gap: var(--sp-1);   /* 4px — gap between a stacked field's label and its control */
+  --num-w: 56px;              /* width of the small numeric boxes beside sliders/ranges */
+
   /* ---- radius scale ---- */
+  --r-xs: 3px;                /* micro radius: swatches, colorbar track, zebra rows */
   --r-sm: 6px;
   --r-md: 9px;
   --r-lg: 14px;

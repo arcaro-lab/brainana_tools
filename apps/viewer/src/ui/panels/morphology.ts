@@ -20,21 +20,21 @@ export interface MorphologyPanel {
 
 export function createMorphologyPanel(cb: MorphologyPanelCallbacks): MorphologyPanel {
   const metricOptions: SelectOption[] = [
-    { value: 'curvature', label: 'Curvature' },
-    { value: 'sulc', label: 'Sulcal depth' },
-    { value: 'thickness', label: 'Thickness' },
-    { value: 'none', label: 'None' },
+    { value: 'curvature', label: 'curvature' },
+    { value: 'sulc', label: 'sulcal depth' },
+    { value: 'thickness', label: 'thickness' },
+    { value: 'none', label: 'none' },
   ]
   const styleField = { element: null as unknown as HTMLElement }
 
-  const metricPicker = selectField('Display', metricOptions, (value) => {
+  const metricPicker = selectField('display', metricOptions, (value) => {
     styleField.element.hidden = value !== 'curvature'
     cb.onDisplay(value as MorphologyDisplayMetric)
   })
 
-  const stylePicker = selectField('Curvature style', [
-    { value: 'binary', label: 'Binary' },
-    { value: 'continuous', label: 'Continuous' },
+  const stylePicker = selectField('curvature style', [
+    { value: 'binary', label: 'binary' },
+    { value: 'continuous', label: 'continuous' },
   ], (value) => cb.onCurvatureStyle(value as CurvatureStyle))
   styleField.element = stylePicker.element
 
