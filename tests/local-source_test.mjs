@@ -6,8 +6,9 @@ import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { startServer } from '../core/server/runtime.mjs'
-import { generateSessionToken } from '../core/server/security.mjs'
+import { startServer } from '@brainana/core-server/runtime.mjs'
+import { generateSessionToken } from '@brainana/core-server/security.mjs'
+import { viewerManifestProvider } from '../apps/viewer/server/manifest.mjs'
 
 let passed = 0
 const ok = (name) => {
@@ -38,7 +39,7 @@ async function buildFixture() {
 async function main() {
   const fixtureRoot = await buildFixture()
   const token = generateSessionToken()
-  const { server, address } = await startServer({ token, port: 0 })
+  const { server, address } = await startServer({ token, port: 0, manifestProvider: viewerManifestProvider })
   const base = `http://127.0.0.1:${address.port}`
   const auth = { Authorization: `Bearer ${token}` }
 
@@ -109,9 +110,9 @@ async function main() {
     assert.equal((await (await fetch(`${base}/api/sources`, { headers: auth })).json()).length, 0)
     ok('DELETE /api/sources tears the source down')
 
-    // --- optional: real brainana output dir, if mounted here ---
-    const realRoot = process.env.BRAINANA_TEST_OUTPUT || '/mnt/DataDrive3/xliu/prep_test/brainana_test/preproc/dataset_devtest_docker_v1.3.0/preprocessed'
-    if (fs.existsSync(realRoot)) {
+    // --- optional: real brainana output dir, exercised only when BRAINANA_TEST_OUTPUT points at one ---
+    const realRoot = process.env.BRAINANA_TEST_OUTPUT
+    if (realRoot && fs.existsSync(realRoot)) {
       const r = await (await fetch(`${base}/api/sources`, { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'local', path: realRoot }) })).json()
       const realMonkeys = await (await fetch(`${base}/api/sources/${r.id}/monkeys`, { headers: auth })).json()
       assert.ok(Array.isArray(realMonkeys) && realMonkeys.length > 0, 'real output dir exposes monkeys')

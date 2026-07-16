@@ -1,6 +1,6 @@
-// Unit tests for the ported ROI/warp math (viewer/src/data/roiWarp.ts, from Align).
+// Unit tests for the ported ROI/warp math (@brainana/imaging-math/roiWarp.ts, from Align).
 import assert from 'node:assert/strict'
-import { flatIndex, determinant3, applyAffine, invertAffine, sampleNearest, sampleLinear, createGaussianRoi, normalizePositive, fslVoxelToMm, scalarCorrelation } from '../viewer/src/data/roiWarp.ts'
+import { flatIndex, determinant3, applyAffine, invertAffine, sampleNearest, sampleLinear, createGaussianRoi, normalizePositive, fslVoxelToMm, scalarCorrelation } from '@brainana/imaging-math/roiWarp.ts'
 
 let passed = 0
 const ok = (name) => {

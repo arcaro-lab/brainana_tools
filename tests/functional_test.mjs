@@ -1,7 +1,7 @@
 // Unit tests for the pure functional-map math (viewer/src/data/functional.ts).
 // Run via Node's native TypeScript support (Node >= 22.18 strips types on import).
 import assert from 'node:assert/strict'
-import { finiteExtrema, applyThresholdMask, functionalModes, createFunctionalSurfaceLut, quantizeFunctionalSurfaceValues, maskSurfaceBinsByF, maskSurfaceBinsByValue, surfaceLutFromColormap, mapFunctionalDisplay } from '../viewer/src/data/functional.ts'
+import { finiteExtrema, applyThresholdMask, functionalModes, createFunctionalSurfaceLut, quantizeFunctionalSurfaceValues, maskSurfaceBinsByF, maskSurfaceBinsByValue, surfaceLutFromColormap, mapFunctionalDisplay } from '../apps/viewer/src/data/functional.ts'
 
 let passed = 0
 const ok = (name) => {

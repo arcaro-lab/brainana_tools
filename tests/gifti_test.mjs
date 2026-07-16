@@ -1,7 +1,7 @@
 // Unit tests for the GIFTI reader (viewer/src/data/gifti.ts), incl. gzip + raw base64.
 import assert from 'node:assert/strict'
 import { zlibSync } from 'fflate'
-import { parseGiftiFloat32 } from '../viewer/src/data/gifti.ts'
+import { parseGiftiFloat32 } from '../apps/viewer/src/data/gifti.ts'
 
 let passed = 0
 const ok = (name) => {

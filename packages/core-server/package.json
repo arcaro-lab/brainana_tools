@@ -1,0 +1,14 @@
+{
+  "name": "@brainana/core-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Tool-agnostic local HTTP runtime: loopback bind + session-token guard, DataSource registry (local + SFTP), remote cache, atomic export. Domain manifest logic is injected, never imported.",
+  "//exports": "Subpaths resolve to raw source (.mjs). Keep explicit extensions in importers.",
+  "exports": {
+    "./*": "./*"
+  },
+  "dependencies": {
+    "ssh2": "^1.16.0"
+  }
+}

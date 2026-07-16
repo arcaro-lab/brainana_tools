@@ -1,6 +1,6 @@
 // Unit tests for the pure visual-field math (viewer/src/data/visualField.ts).
 import assert from 'node:assert/strict'
-import { visualXY, median, visualFieldStats, RINGS, ECC_MAX } from '../viewer/src/data/visualField.ts'
+import { visualXY, median, visualFieldStats, RINGS, ECC_MAX } from '../apps/viewer/src/data/visualField.ts'
 
 let passed = 0
 const ok = (name) => {

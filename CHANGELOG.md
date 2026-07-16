@@ -31,7 +31,14 @@ All notable changes to Brainana Viewer are documented here.
 - CI skeleton (macOS/Linux/Windows matrix); headless tests for server, security, sftp,
   and the built frontend (token injection).
 
+- **Phase 2 unified data path**: `core/client` source manager + in-app source chooser
+  (`viewer/src/ui/dialogs/sources.ts`); simultaneous multi-source, source-scoped throughout.
+- **Phase 3 NiiVue frontend (substantial)**: dual-instance `MultiView` renderer, surfaces,
+  ARM/D99 atlases, retinotopy/somatotopy with F-threshold masking, morphology shading,
+  yellow-marker modes, visual-field plot, and the unified Color-display section.
+
 ### Not yet done
-- Phase 3 NiiVue rendering + full panel set (surfaces, atlases, retino/somato, ROI,
-  projection, snapshot/state/ZIP export); Phase 4 per-OS packaging/signing;
-  Phase 5 full test matrix + docs.
+- Remaining Phase 3 parity: imported-volume **surface projection** and **ROI generation**
+  (staged + unit-tested in `viewer/src/data/{projection,roiWarp}.ts`, not yet wired into the UI);
+  snapshot/state/ZIP export UI. Phase 4 per-OS packaging/signing; Phase 5 full test/browser
+  matrix + architecture docs.

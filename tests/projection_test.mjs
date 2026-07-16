@@ -1,6 +1,6 @@
-// Unit tests for the pure ribbon projection (viewer/src/data/projection.ts).
+// Unit tests for the pure ribbon projection (@brainana/imaging-math/projection.ts).
 import assert from 'node:assert/strict'
-import { buildRibbon, projectAtlas, projectFunction, SAMPLE_COUNT, RIBBON_WEIGHTS, UNPROJECTED } from '../viewer/src/data/projection.ts'
+import { buildRibbon, projectAtlas, projectFunction, SAMPLE_COUNT, RIBBON_WEIGHTS, UNPROJECTED } from '@brainana/imaging-math/projection.ts'
 
 let passed = 0
 const ok = (name) => {

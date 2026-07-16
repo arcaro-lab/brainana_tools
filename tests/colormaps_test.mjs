@@ -1,7 +1,7 @@
 // Unit tests for custom LUTs (viewer/src/niivue/colormaps.ts).
 // Key invariant: somatotopy is the eccentricity ramp REVERSED (blue at 0 → red at 100).
 import assert from 'node:assert/strict'
-import { buildColormap, ECCENTRICITY_STOPS, SOMATOTOPY_STOPS, POLAR_STOPS, COLORMAPS, CURVATURE_BINARY } from '../viewer/src/niivue/colormaps.ts'
+import { buildColormap, ECCENTRICITY_STOPS, SOMATOTOPY_STOPS, POLAR_STOPS, COLORMAPS, CURVATURE_BINARY } from '../apps/viewer/src/niivue/colormaps.ts'
 
 let passed = 0
 const ok = (name) => {

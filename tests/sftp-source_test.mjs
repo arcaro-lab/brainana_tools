@@ -165,7 +165,8 @@ const ok = (name) => {
 }
 
 async function main() {
-  const { SftpDataSource } = await import('../core/server/sftpSource.mjs')
+  const { SftpDataSource } = await import('@brainana/core-server/sftpSource.mjs')
+  const { viewerManifestProvider } = await import('../apps/viewer/server/manifest.mjs')
 
   const remoteRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'brainana-remote-'))
   const cacheRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'brainana-cache-'))
@@ -180,6 +181,7 @@ async function main() {
     connection: { host: '127.0.0.1', port, username: 'test', password: 'test' },
     remoteRoot,
     cacheRoot,
+    manifest: viewerManifestProvider,
   })
 
   try {

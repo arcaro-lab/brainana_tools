@@ -1,6 +1,6 @@
 // Unit tests for procedural ROI colors (viewer/src/data/colors.ts).
 import assert from 'node:assert/strict'
-import { roiColor, hslToRgb, ARM_SEED, D99_SEED } from '../viewer/src/data/colors.ts'
+import { roiColor, hslToRgb, ARM_SEED, D99_SEED } from '../apps/viewer/src/data/colors.ts'
 
 let passed = 0
 const ok = (name) => {

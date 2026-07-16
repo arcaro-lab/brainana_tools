@@ -1,7 +1,7 @@
 // Unit tests for core/server/security.mjs: token compare + path containment.
 import assert from 'node:assert/strict'
 import path from 'node:path'
-import { generateSessionToken, timingSafeEqual, createTokenGuard, isWithin, cleanRelative, resolveWithin } from '../core/server/security.mjs'
+import { generateSessionToken, timingSafeEqual, createTokenGuard, isWithin, cleanRelative, resolveWithin } from '@brainana/core-server/security.mjs'
 
 let passed = 0
 const ok = (name) => {
@@ -28,10 +28,10 @@ const reqWith = (t) => ({ headers: t ? { authorization: `Bearer ${t}` } : {} })
 assert.equal(guard(reqWith(token), new URL('http://x/api/x')), true)
 assert.equal(guard(reqWith('nope'), new URL('http://x/api/x')), false)
 assert.equal(guard(reqWith(null), new URL('http://x/api/x')), false)
-// header + query-param sources
+// header source is accepted; a ?token= query param is deliberately NOT (keeps the token out of URLs/history)
 assert.equal(guard({ headers: { 'x-brainana-token': token } }, new URL('http://x/')), true)
-assert.equal(guard({ headers: {} }, new URL(`http://x/?token=${token}`)), true)
-ok('createTokenGuard accepts bearer, header, and query token; rejects wrong/absent')
+assert.equal(guard({ headers: {} }, new URL(`http://x/?token=${token}`)), false, '?token= query param is rejected')
+ok('createTokenGuard accepts bearer + header token; rejects query token and wrong/absent')
 
 const openGuard = createTokenGuard(null)
 assert.equal(openGuard({ headers: {} }, new URL('http://x/')), true, 'null token disables the guard')

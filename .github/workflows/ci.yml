@@ -18,7 +18,9 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Node >= 22.18 strips types on `import`, which the unit tests rely on
+          # (they import viewer/src/*.ts directly). Node 20 cannot run them.
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
@@ -30,5 +32,8 @@ jobs:
       - name: Typecheck
         run: npm run typecheck --if-present
 
-      - name: Test (headless server smoke + security + sftp)
+      - name: Build (tsc + vite) — also produces dist/ so the frontend token-injection test runs
+        run: npm run build
+
+      - name: Test (headless server smoke + security + sftp + built frontend)
         run: npm test

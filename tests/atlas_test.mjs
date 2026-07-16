@@ -1,6 +1,6 @@
 // Unit tests for atlas LUT parsing + colortable building (viewer/src/data/atlas.ts).
 import assert from 'node:assert/strict'
-import { parseAtlasTsv, buildLabelColortable, displayLabel, labelColor } from '../viewer/src/data/atlas.ts'
+import { parseAtlasTsv, buildLabelColortable, displayLabel, labelColor } from '../apps/viewer/src/data/atlas.ts'
 
 let passed = 0
 const ok = (name) => {

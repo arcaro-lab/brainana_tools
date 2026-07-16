@@ -1,0 +1,14 @@
+{
+  "name": "@brainana/imaging-math",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Pure, framework-free imaging math shared by brainana vis tools (ROI warp, volume→surface projection). No DOM/NiiVue — headless-testable.",
+  "//exports": "Subpaths resolve to RAW .ts source (no build step), so Vite and Node >=22.18 type-stripping resolve identically. Keep the .ts extension in importers.",
+  "exports": {
+    "./*": "./*"
+  },
+  "dependencies": {
+    "nifti-reader-js": "^0.8.0"
+  }
+}

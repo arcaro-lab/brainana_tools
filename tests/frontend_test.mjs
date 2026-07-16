@@ -5,11 +5,11 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { startServer } from '../core/server/runtime.mjs'
-import { generateSessionToken } from '../core/server/security.mjs'
+import { startServer } from '@brainana/core-server/runtime.mjs'
+import { generateSessionToken } from '@brainana/core-server/security.mjs'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const distRoot = path.join(repoRoot, 'dist')
+const distRoot = path.join(repoRoot, 'apps', 'viewer', 'dist')
 
 if (!fs.existsSync(path.join(distRoot, 'index.html'))) {
   console.log('  skip - dist/ not built (run `npm run build`)')

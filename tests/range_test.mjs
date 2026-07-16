@@ -1,7 +1,7 @@
 // Unit tests for the shared range/clip math (viewer/src/data/range.ts).
 // Run via Node's native TypeScript support (Node >= 22.18 strips types on import).
 import assert from 'node:assert/strict'
-import { percentileRange, applyValueClip, clampRange } from '../viewer/src/data/range.ts'
+import { percentileRange, applyValueClip, clampRange } from '../apps/viewer/src/data/range.ts'
 
 let passed = 0
 const ok = (name) => {

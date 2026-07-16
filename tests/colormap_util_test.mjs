@@ -10,7 +10,7 @@ import {
   gradientFromRgba,
   buildColormapRegistry,
   prettifyLabel,
-} from '../viewer/src/data/colormap.ts'
+} from '../apps/viewer/src/data/colormap.ts'
 
 let passed = 0
 const ok = (name) => {

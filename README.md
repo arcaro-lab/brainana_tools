@@ -4,32 +4,48 @@ Cross-platform NiiVue-based viewer for per-subject (`sub-*`) output from the `br
 Nextflow pipeline. This is the **source-first rebuild** (fresh `0.x` line) tracked in
 `docs/technical-route-and-improvement-plan.md`.
 
-> Status: **Phase 0 + Phase 1 complete** — foundation and core platform.
-> The NiiVue frontend rebuild (Phase 3) is not done yet; the reference `dist/`
-> bundle is served through a legacy-compat route so the app remains usable.
+> Status: **Phases 0–2 complete** (foundation, core platform, unified multi-source data path)
+> and **Phase 3 (NiiVue frontend) substantially built** — the source-scoped, token-guarded SPA
+> in `viewer/src/` (`dist/` is its Vite build). Remaining Phase 3 parity work (imported-volume
+> projection, ROI generation) is staged in `viewer/src/data/{projection,roiWarp}.ts` and tested,
+> but not yet wired into the UI. Phases 4–5 (packaging, full test/browser matrix) are ahead.
 
 ## Layout
 
+An **npm-workspaces monorepo**: tool-agnostic shared `packages/*` consumed by per-tool `apps/*`.
+Adding a sibling tool (Aligner, Editor) means a new `apps/<tool>/` — no duplicated platform code.
+See [docs/adding-a-tool.md](docs/adding-a-tool.md).
+
 ```
-core/       tool-agnostic platform layer (server runtime, data sources, launcher, client infra)
-viewer/     Viewer domain layer (manifest + FreeSurfer parsing; rebuilt UI lands in viewer/src)
-scripts/    generate-version, test runner, packaging
-tests/      headless server smoke + security + sftp tests
-dist/       BUILD OUTPUT — gitignored
+packages/
+  core-server/    tool-agnostic HTTP runtime, security, DataSource registry (local + SFTP), cache, export
+  core-launcher/  cross-platform launch() (token → free port → server → open browser)
+  core-client/    browser platform: runtime/source/filesystem clients, session, export, WebGL2 gate
+  ui/             design-token theme (theme.css + fonts), h() DOM helper, generic components
+  niivue-kit/     generic NiiVue helpers (orientation gizmo, markers)
+  imaging-math/   pure headless math (ROI warp, volume→surface projection)
+apps/
+  viewer/         the Viewer: index.html + src/ (SPA) + server/ (manifest + FreeSurfer) + launch/server entries
+scripts/          generate-version (per-app), workspace-aware test runner
+tests/            headless server/security/sftp + domain-math + core-purity guard
+apps/*/dist/      BUILD OUTPUT — gitignored
 ```
+
+Cross-package imports use `@brainana/*` specifiers whose `exports` map points at **raw source**, so
+Vite and Node's `.ts` type-stripping tests resolve identically (no build step in the test path).
 
 ## Requirements
 
-- Node **>= 20**
+- Node **>= 22.18** (the unit tests import `.ts` sources directly, relying on Node's type stripping)
 - A modern desktop browser with **WebGL2** (Chrome/Edge baseline; Firefox/Safari supported)
 
 ## Develop
 
 ```sh
-npm install                 # install deps (ssh2 + build/frontend toolchain)
-npm run generate-version    # emit core/server/version.mjs from package.json
-npm test                    # headless: local data source, security, sftp
-npm start                   # launch: free port, 127.0.0.1 bind, open browser
+npm install                 # install workspace deps (single lockfile, hoisted node_modules)
+npm run generate-version    # emit packages/core-server/version.mjs (‑‑app <name> to override identity)
+npm test                    # headless: domain math, server, security, sftp, core-purity guard
+npm start                   # launch the Viewer: free port, 127.0.0.1 bind, open browser
 ```
 
 ## Data sources
