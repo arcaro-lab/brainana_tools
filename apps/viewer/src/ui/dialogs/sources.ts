@@ -2,8 +2,7 @@
 // sources. Multi-source is held server-side; this just drives /api/sources.
 import type { RuntimeClient } from '@brainana/core-client/runtimeClient.ts'
 import type { SourceManager, SourceSummary } from '@brainana/core-client/sourceManager.ts'
-import type { BrowseListing, FilesystemClient } from '@brainana/core-client/filesystemClient.ts'
-import type { RemoteProfile } from '@brainana/core-client/sessionPersistence.ts'
+import type { BrowseListing, FilesystemClient, SshHost } from '@brainana/core-client/filesystemClient.ts'
 import { loadRecent, rememberLocal, loadProfiles, rememberProfile, forgetProfile } from '@brainana/core-client/sessionPersistence.ts'
 import { h, field, errorText } from '@brainana/ui/dom.ts'
 
@@ -13,9 +12,9 @@ interface Deps {
   files: FilesystemClient
 }
 
-// Folder glyph reused by the Browse button and by each folder row in the picker (no shared icon set).
+// Folder glyph reused by the Browse buttons and by each folder row in the picker (no shared icon set).
 const FOLDER_SVG =
-  '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>'
+  '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>'
 
 // Dataset-table column widths (px) for the fixed-layout resizable columns. Held at module scope so
 // drags survive the table rebuilds fired on every registry change, and persist across reopens of
@@ -25,25 +24,53 @@ const MIN_COL = 48
 const datasetColW = { type: 72, name: 240, label: 130 }
 type ColKey = keyof typeof datasetColW
 
-// `onDone` fires when the user clicks the next-step "Done — choose a monkey" button (after at
+// One entry in the remote-connect recall dropdown: a saved profile (removable) or a host parsed from
+// ~/.ssh/config (not removable). `host` is the address to connect to (a profile's host, or an ssh
+// config entry's HostName falling back to its alias).
+interface RecallEntry {
+  host: string
+  username?: string
+  port?: number
+  removable: boolean
+}
+
+// `onDone` fires when the user clicks the next-step "continue, choose a monkey" button (after at
 // least one dataset exists): the dialog closes and the caller can steer focus to the monkey picker.
 export function mountSourcesDialog(deps: Deps, onChanged: () => void, onDone?: () => void): void {
   const { sources, files } = deps
   const recents = loadRecent()
 
+  // A live pre-add SFTP browse session, kept open across multiple dataset adds and torn down on
+  // disconnect or when the dialog closes. Declared before `close` so teardown can reach it.
+  let remoteToken: string | null = null
+  const teardownRemote = (): void => {
+    const token = remoteToken
+    remoteToken = null
+    if (token) files.disconnectRemote(token).catch(() => {})
+  }
+
+  // Assigned once the registry subscription is wired; declared here so `close` can unsubscribe.
+  let unsub: () => void = () => {}
+
   const overlay = h('div', { class: 'overlay' })
-  const close = (): void => overlay.remove()
+  const close = (): void => {
+    teardownRemote()
+    unsub()
+    overlay.remove()
+  }
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) close()
   })
 
-  // The header dismiss button doubles as the next step: a plain "Close" while there are no
-  // datasets, then a primary "Done — choose a monkey" once one exists (which also steers focus to
-  // the monkey picker via onDone). Declared before renderList so the subscription can restyle it.
-  let hasSources = false
+  // Header dismiss: a plain "close" that always just closes. The next-step primary action lives in
+  // the footer (`continueBtn`), enabled once a dataset exists.
   const closeBtn = h('button', { type: 'button', class: 'ghost' }, ['close'])
-  closeBtn.addEventListener('click', () => {
-    unsub()
+  closeBtn.addEventListener('click', close)
+
+  let hasSources = false
+  const continueBtn = h('button', { type: 'button', class: 'primary' }, ['continue, choose a monkey'])
+  continueBtn.disabled = true
+  continueBtn.addEventListener('click', () => {
     close()
     if (hasSources) onDone?.()
   })
@@ -128,10 +155,9 @@ export function mountSourcesDialog(deps: Deps, onChanged: () => void, onDone?: (
     list.innerHTML = ''
     list.append(items.length === 0 ? h('p', { class: 'muted' }, ['No datasets yet.']) : buildDatasetTable(items))
     hasSources = items.length > 0
-    closeBtn.className = hasSources ? 'primary' : 'ghost'
-    closeBtn.textContent = hasSources ? 'done — choose a monkey' : 'close'
+    continueBtn.disabled = !hasSources
   }
-  const unsub = sources.subscribe(renderList)
+  unsub = sources.subscribe(renderList)
 
   // local form
   const localPath = h('input', { type: 'text', placeholder: '/path/to/brainana/output', class: 'grow' }) as HTMLInputElement
@@ -156,7 +182,7 @@ export function mountSourcesDialog(deps: Deps, onChanged: () => void, onDone?: (
       },
     })
   })
-  const localBtn = h('button', { type: 'button', class: 'primary' }, ['add local dataset'])
+  const localBtn = h('button', { type: 'button', class: 'primary' }, ['add'])
   const localMsg = h('span', { class: 'msg' })
   localBtn.addEventListener('click', async () => {
     if (!localPath.value.trim()) return
@@ -166,7 +192,7 @@ export function mountSourcesDialog(deps: Deps, onChanged: () => void, onDone?: (
       const spec = { type: 'local' as const, path: localPath.value.trim() }
       await sources.add(spec)
       rememberLocal(spec)
-      localMsg.textContent = '✓ Added'
+      localMsg.textContent = '✓ added'
       localMsg.className = 'msg ok'
       onChanged()
     } catch (err) {
@@ -185,7 +211,8 @@ export function mountSourcesDialog(deps: Deps, onChanged: () => void, onDone?: (
   const remoteMsg = h('span', { class: 'msg' })
 
   // Build the (secret-carrying) connection object from the fields. Blank/invalid port → undefined,
-  // so the server/SftpClient falls back to 22.
+  // so the server/SftpClient falls back to 22. The fields stay populated (just disabled) while
+  // connected, so this still yields the password on repeat adds.
   const buildConnection = () => {
     const portNum = rPort.value.trim() ? Number(rPort.value.trim()) : NaN
     return {
@@ -196,40 +223,71 @@ export function mountSourcesDialog(deps: Deps, onChanged: () => void, onDone?: (
     }
   }
 
-  // Saved connection profiles (host/port/user only — passwords are never persisted). Auto-saved on a
-  // successful Connect; loading one fills the fields. Always shown, with an empty hint.
+  // Recall dropdown: saved connection profiles (host/port/user only — passwords are never persisted)
+  // plus concrete hosts read from ~/.ssh/config. Profiles auto-save on a successful Connect; loading
+  // an entry fills the fields. Only profiles are removable.
   const profileSelect = h('select', { class: 'grow', ariaLabel: 'Saved connections' }) as HTMLSelectElement
   const loadBtn = h('button', { type: 'button', class: 'ghost sm' }, ['load'])
   const removeProfileBtn = h('button', { type: 'button', class: 'ghost sm' }, ['remove'])
-  let remoteProfiles: RemoteProfile[] = []
-  const profileText = (p: RemoteProfile): string => `${p.username}@${p.host}:${p.port ?? 22}`
-  const renderProfiles = (): void => {
-    remoteProfiles = loadProfiles()
+  let sshHostsCache: SshHost[] = []
+  let recallEntries: RecallEntry[] = []
+  const selectedEntry = (): RecallEntry | undefined => recallEntries[Number(profileSelect.value)]
+  const updateRemoveEnabled = (): void => {
+    const e = selectedEntry()
+    removeProfileBtn.disabled = remoteToken !== null || !e || !e.removable
+  }
+  const renderRecall = (): void => {
+    const profiles = loadProfiles()
+    recallEntries = []
     profileSelect.innerHTML = ''
-    const empty = remoteProfiles.length === 0
+    const seen = new Set<string>()
+    const keyOf = (host: string, user?: string, port?: number): string => `${user ?? ''}@${host}:${port ?? 22}`
+
+    const profileGroup = h('optgroup', { label: 'recent' }) as HTMLOptGroupElement
+    for (const p of profiles) {
+      seen.add(keyOf(p.host, p.username, p.port))
+      const idx = recallEntries.length
+      recallEntries.push({ host: p.host, username: p.username, port: p.port, removable: true })
+      profileGroup.append(h('option', { value: String(idx) }, [`${p.username}@${p.host}:${p.port ?? 22}`]))
+    }
+
+    const sshGroup = h('optgroup', { label: 'ssh config' }) as HTMLOptGroupElement
+    for (const sh of sshHostsCache) {
+      const addr = sh.hostName || sh.host
+      const key = keyOf(addr, sh.user, sh.port)
+      if (seen.has(key)) continue // a saved profile already covers this host
+      seen.add(key)
+      const idx = recallEntries.length
+      recallEntries.push({ host: addr, username: sh.user, port: sh.port, removable: false })
+      sshGroup.append(h('option', { value: String(idx) }, [sh.user ? `${sh.user}@${sh.host}` : sh.host]))
+    }
+
+    const empty = recallEntries.length === 0
     if (empty) {
       profileSelect.append(h('option', { value: '' }, ['(none saved yet)']))
     } else {
-      remoteProfiles.forEach((p, i) => profileSelect.append(h('option', { value: String(i) }, [profileText(p)])))
+      if (profileGroup.childElementCount) profileSelect.append(profileGroup)
+      if (sshGroup.childElementCount) profileSelect.append(sshGroup)
     }
-    profileSelect.disabled = empty
-    loadBtn.disabled = empty
-    removeProfileBtn.disabled = empty
+    profileSelect.disabled = empty || remoteToken !== null
+    loadBtn.disabled = empty || remoteToken !== null
+    updateRemoveEnabled()
   }
+  profileSelect.addEventListener('change', updateRemoveEnabled)
   loadBtn.addEventListener('click', () => {
-    const p = remoteProfiles[Number(profileSelect.value)]
-    if (!p) return
-    rHost.value = p.host
-    rUser.value = p.username
-    rPort.value = p.port ? String(p.port) : ''
+    const e = selectedEntry()
+    if (!e) return
+    rHost.value = e.host
+    rUser.value = e.username ?? ''
+    rPort.value = e.port ? String(e.port) : ''
     rPass.value = '' // never stored — user re-enters
     rPass.focus()
   })
   removeProfileBtn.addEventListener('click', () => {
-    const p = remoteProfiles[Number(profileSelect.value)]
-    if (!p) return
-    forgetProfile(p)
-    renderProfiles()
+    const e = selectedEntry()
+    if (!e || !e.removable) return
+    forgetProfile({ host: e.host, port: e.port, username: e.username ?? '' })
+    renderRecall()
   })
   // Prefill from the most recent profile.
   const [firstProfile] = loadProfiles()
@@ -238,24 +296,86 @@ export function mountSourcesDialog(deps: Deps, onChanged: () => void, onDone?: (
     rUser.value = firstProfile.username
     rPort.value = firstProfile.port ? String(firstProfile.port) : ''
   }
-  renderProfiles()
+  renderRecall()
+  // Pull ~/.ssh/config hosts in the background; re-render the dropdown when they arrive.
+  files
+    .sshHosts()
+    .then((hosts) => {
+      sshHostsCache = hosts
+      renderRecall()
+    })
+    .catch(() => {}) // no config / unreadable → profiles-only
 
   const connectBtn = h('button', { type: 'button', class: 'primary' }, ['connect'])
-  // Add the remote dataset with the folder chosen in the browser opened after a successful Connect.
+  const disconnectBtn = h('button', { type: 'button', class: 'ghost sm' }, ['disconnect'])
+  const connBanner = h('span', { class: 'msg ok conn-banner' })
+
+  // The repeatable add row (mirrors the local one): browse remote dirs into the path field, then add.
+  // Shown only while connected.
+  const remoteBrowseBtn = h('button', {
+    type: 'button',
+    class: 'icon-btn',
+    title: 'Browse remote folders',
+    ariaLabel: 'Browse remote folders',
+    innerHTML: FOLDER_SVG,
+  })
+  const remotePath = h('input', { type: 'text', placeholder: '/remote/path/to/dataset', class: 'grow' }) as HTMLInputElement
+  const remoteAddBtn = h('button', { type: 'button', class: 'primary' }, ['add'])
+  const remoteAddRow = h('div', { class: 'row' }, [remoteBrowseBtn, remotePath, remoteAddBtn])
+  // Add/validation status sits directly under the add row it refers to (not up in the connect row).
+  const remoteAddMsg = h('span', { class: 'msg' })
+
+  // Toggle the connected vs disconnected layout. Connection fields lock while connected so the open
+  // session's identity can't drift from what add uses.
+  const setConnected = (connected: boolean): void => {
+    for (const input of [rHost, rUser, rPort, rPass]) input.disabled = connected
+    connectBtn.style.display = connected ? 'none' : ''
+    disconnectBtn.style.display = connected ? '' : 'none'
+    remoteAddRow.style.display = connected ? '' : 'none'
+    connBanner.style.display = connected ? '' : 'none'
+    remoteAddMsg.style.display = connected ? '' : 'none'
+    profileSelect.disabled = connected || recallEntries.length === 0
+    loadBtn.disabled = connected || recallEntries.length === 0
+    updateRemoveEnabled()
+  }
+
+  // Add a remote dataset on the open connection. Leaves the connection open so more can be added;
+  // the server rejects (atomically) a root with no subjects, surfaced inline here.
   const addRemote = async (remoteRoot: string): Promise<void> => {
-    remoteMsg.textContent = ''
-    remoteMsg.className = 'msg'
+    remoteAddMsg.textContent = 'adding…'
+    remoteAddMsg.className = 'msg'
     try {
       await sources.add({ type: 'remote', connection: buildConnection(), remoteRoot, cacheRoot: '' })
-      rPass.value = ''
-      remoteMsg.textContent = '✓ Added'
-      remoteMsg.className = 'msg ok'
+      remoteAddMsg.textContent = '✓ added'
+      remoteAddMsg.className = 'msg ok'
       onChanged()
     } catch (err) {
-      remoteMsg.textContent = errorText(err)
-      remoteMsg.className = 'msg error'
+      remoteAddMsg.textContent = errorText(err)
+      remoteAddMsg.className = 'msg error'
     }
   }
+
+  remoteBrowseBtn.addEventListener('click', () => {
+    if (!remoteToken) return
+    const token = remoteToken
+    openFsPicker({
+      title: 'choose remote folder',
+      start: remotePath.value.trim(),
+      browse: (p) => files.browseRemote(token, p),
+      // Write the chosen path into the field (no auto-add); the connection persists after the picker.
+      onPick: (abs) => {
+        remotePath.value = abs
+      },
+    })
+  })
+  remoteAddBtn.addEventListener('click', async () => {
+    const root = remotePath.value.trim()
+    if (!root || !remoteToken) return
+    remoteAddBtn.disabled = true
+    await addRemote(root)
+    remoteAddBtn.disabled = false
+  })
+
   connectBtn.addEventListener('click', async () => {
     if (!rHost.value.trim() || !rUser.value.trim()) return
     connectBtn.disabled = true
@@ -264,25 +384,34 @@ export function mountSourcesDialog(deps: Deps, onChanged: () => void, onDone?: (
     try {
       const connection = buildConnection()
       const { token } = await files.connectRemote(connection)
+      remoteToken = token
       // Remember the connection (no path, no password) as soon as it succeeds, and surface it.
       rememberProfile({ host: connection.host, port: connection.port, username: connection.username })
-      renderProfiles()
+      renderRecall()
       remoteMsg.textContent = ''
-      // Interactive remote browse (mirrors the local picker); the connection is already open, so
-      // picking a folder adds the dataset directly. Closing the picker frees the browse socket.
-      openFsPicker({
-        title: 'choose remote folder',
-        start: '',
-        browse: (p) => files.browseRemote(token, p),
-        onPick: (abs) => void addRemote(abs),
-        onClose: () => void files.disconnectRemote(token).catch(() => {}),
-      })
+      remoteMsg.className = 'msg'
+      remoteAddMsg.textContent = ''
+      remoteAddMsg.className = 'msg'
+      connBanner.textContent = `connected to ${connection.username}@${connection.host}`
+      setConnected(true)
+      remotePath.focus()
     } catch (err) {
       remoteMsg.textContent = errorText(err)
       remoteMsg.className = 'msg error'
     } finally {
       connectBtn.disabled = false
     }
+  })
+  disconnectBtn.addEventListener('click', () => {
+    teardownRemote()
+    rPass.value = ''
+    remotePath.value = ''
+    remoteMsg.textContent = ''
+    remoteMsg.className = 'msg'
+    remoteAddMsg.textContent = ''
+    remoteAddMsg.className = 'msg'
+    setConnected(false)
+    renderRecall() // re-enable recall now that we're disconnected
   })
 
   // Port shares a row with host but must stay narrow rather than flex like the other fields.
@@ -294,22 +423,27 @@ export function mountSourcesDialog(deps: Deps, onChanged: () => void, onDone?: (
     list,
     h('div', { class: 'source-forms' }, [
       h('div', { class: 'source-form' }, [
-        h('h3', {}, ['local folder']),
+        h('h3', {}, ['local dataset']),
         h('div', { class: 'row' }, [browseBtn, localPath, localBtn]),
         localMsg,
       ]),
       h('div', { class: 'source-form' }, [
-        h('h3', {}, ['remote (SSH/SFTP)']),
-        // Top recall: reload a saved connection into the fields below.
+        h('h3', {}, ['remote dataset (SSH/SFTP)']),
+        // Top recall: reload a saved connection or a ~/.ssh/config host into the fields below.
         h('div', { class: 'row conn-recall' }, [h('span', { class: 'muted' }, ['recent']), profileSelect, loadBtn, removeProfileBtn]),
         // Fields in a 2-column grid: host (wide) + port (narrow); then user + password (equal).
         h('div', { class: 'row' }, [field('host', rHost), portField]),
         h('div', { class: 'row' }, [field('user', rUser), field('password', rPass)]),
-        // Primary action bottom-right, status message to its left.
-        h('div', { class: 'row' }, [remoteMsg, h('span', { class: 'spacer' }), connectBtn]),
+        // Connect/disconnect action, status message to its left.
+        h('div', { class: 'row' }, [remoteMsg, h('span', { class: 'spacer' }), connectBtn, disconnectBtn]),
+        connBanner,
+        remoteAddRow,
+        remoteAddMsg,
       ]),
     ]),
+    h('div', { class: 'dialog-foot' }, [h('span', { class: 'spacer' }), continueBtn]),
   ])
+  setConnected(false) // start disconnected: hide disconnect/add-row/banner
   overlay.append(dialog)
   document.body.append(overlay)
 }

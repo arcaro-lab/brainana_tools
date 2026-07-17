@@ -79,6 +79,37 @@ Use desktop dev to verify window behavior and the in-process server. Use **web d
 
 ---
 
+## Building an app file (per-OS distributable)
+
+Dev commands (`dev:desktop`) launch Electron against your working tree — they don't
+produce something you can hand to a user. To get a **standalone app file per OS**, run:
+
+```sh
+cd brainana_tools
+npm run dist:desktop     # build the SPA, then electron-builder → apps/viewer/release/
+```
+
+The output lands in `apps/viewer/release/` (gitignored). You get one app file per OS:
+
+| OS | App file | How a user installs / runs it |
+|---|---|---|
+| macOS | `.dmg` (plus `.zip`) | open the dmg → drag `Brainana Viewer.app` to Applications → launch |
+| Windows | `.exe` (NSIS installer) | run the installer → launch from the Start-menu shortcut |
+| Linux | `.AppImage` (plus `.deb`) | AppImage: `chmod +x *.AppImage && ./Brainana*.AppImage`; deb: `sudo apt install ./*.deb` |
+
+Targets and packaging are defined in [`apps/viewer/electron-builder.yml`](../apps/viewer/electron-builder.yml).
+
+> **Build each OS on that OS.** electron-builder can't cross-compile these — a macOS
+> `.dmg` must be built on macOS, a Windows `.exe` on Windows, etc. To produce all three
+> from one push, use a CI matrix (macos / windows / ubuntu runners).
+
+**First-launch warnings (v1 is unsigned):** macOS Gatekeeper → right-click → **Open**;
+Windows SmartScreen → **More info → Run anyway**; Linux has no such gate. For signing,
+notarization, native-module handling, and the full rationale, see
+[desktop-app.md](desktop-app.md).
+
+---
+
 ## What reloads automatically?
 
 | You changed | Web dev | Desktop dev |
@@ -95,6 +126,7 @@ Use desktop dev to verify window behavior and the in-process server. Use **web d
 | `npm run dev:web` | Vite + HMR (pair with `npm run server`) |
 | `npm run server -- --port 5174 --output-dir <path>` | API/data server only (`<path>` = `datasets/demo_viewer` for the bundled demo) |
 | `npm run dev:desktop` | Build + Electron |
+| `npm run dist:desktop` | Build + electron-builder → per-OS app file in `apps/viewer/release/` |
 | `npm run build` | Build static bundle → `dist/` |
 | `npm start` | Serve last build in browser (no HMR) |
 | `npm test` | Run tests |

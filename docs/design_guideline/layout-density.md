@@ -86,5 +86,6 @@ The single place to re-tune panel tightness:
 ## Out of scope (potential follow-ups)
 
 Internal **canvas** rendering constants are not DOM tightness and were left alone:
-`legend.ts` (`size = 120`) and `visualFieldPlot.ts` canvas font sizes. The `.icon-btn` (34px square)
-in the Datasets dialog is taller than the now-20px (`--ctl-h`) text inputs beside it — cosmetic, dialog-only.
+`legend.ts` (`size = 120`) and `visualFieldPlot.ts` canvas font sizes. (The `.icon-btn` in the
+Datasets dialog was previously a 34px square taller than its row; it is now height-driven to `--ctl-h`
+like every other control, so it lines up with the inputs and buttons beside it.)

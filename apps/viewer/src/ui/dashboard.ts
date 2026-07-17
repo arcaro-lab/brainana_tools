@@ -481,6 +481,10 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
     const jIn = num('1')
     const kIn = num('1')
     const hemiEl = h('dd', {}, ['—'])
+    // Read-only probe of the active overlay's value at the crosshair. The <dt> label is the overlay
+    // name/metric (set dynamically), the <dd> its formatted value; both driven by updateOverlayValue().
+    const overlayDt = h('dt', {}, ['overlay'])
+    const overlayEl = h('dd', {}, ['—'])
     const commitMm = (): void => {
       const mm: [number, number, number] = [Number(xIn.value), Number(yIn.value), Number(zIn.value)]
       if (mm.some((v) => Number.isNaN(v))) return
@@ -504,6 +508,8 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
       ...row('K', kIn),
       h('dt', {}, ['hemi']),
       hemiEl,
+      overlayDt,
+      overlayEl,
     ])
     const put = (inp: HTMLInputElement, v: string): void => {
       if (document.activeElement !== inp) inp.value = v
@@ -517,7 +523,11 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
       put(kIn, ijk ? String(ijk[2]) : '')
       hemiEl.textContent = hemi
     }
-    return { el, update }
+    // Set the overlay probe row's value ('—' when nothing is overlaid). The <dt> stays 'overlay'.
+    const setOverlay = (value: string | null): void => {
+      overlayEl.textContent = value ?? '—'
+    }
+    return { el, update, setOverlay }
   })()
   // Mount the editable editor into the Coordinates subpanel (built into the info panel above).
   {
@@ -1139,6 +1149,8 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
     } else {
       colorDisplay.setTarget(null)
     }
+    // The overlay-value probe in Coordinates tracks the same target — refresh it on overlay/tab change.
+    updateOverlayValue()
   }
 
   // Route the section's controls to whichever overlay is active.
@@ -1362,8 +1374,9 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
     }
     el.innerHTML = ''
     // Continuous float atlas (e.g. CortHierarchy): show the raw value, no id/label lookup. 0 and
-    // non-finite are background → blank. toFixed(4) + Number strips trailing zeros (2.7314, 2.7, 14).
-    const fmtValue = (v: number): string => (Number.isFinite(v) && v !== 0 ? String(Number(v.toFixed(4))) : '')
+    // non-finite are background → blank. Float-vs-int is an atlas-level property, so always show
+    // fixed decimals — a whole value reads as 1.000, never a bare 1 (which looks like a label id).
+    const fmtValue = (v: number): string => (Number.isFinite(v) && v !== 0 ? v.toFixed(3) : '')
     for (const spec of reportSpecs) {
       const raw = view.sampleReportVolume(spec.key)
       if (view.reportVolumeContinuous(spec.key)) {
@@ -1392,6 +1405,44 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
         ]),
       )
     }
+  }
+
+  // Overlay-value probe for the Coordinates section: the value of the currently overlaid map at the
+  // crosshair. Follows the docked tab via colorTarget() and reuses the same per-kind samplers the
+  // dedicated info sections already run each crosshair move (no extra sampling infrastructure).
+  const updateOverlayValue = (): void => {
+    if (!view) {
+      coordEditor.setOverlay(null)
+      return
+    }
+    const target = colorTarget()
+    if (target === 'atlas' && lastAtlasSel) {
+      const name = lastAtlasSel.name
+      const raw = view.sampleReportVolume(name)
+      if (raw == null) {
+        coordEditor.setOverlay(null)
+      } else if (view.reportVolumeContinuous(name)) {
+        coordEditor.setOverlay(raw !== 0 ? raw.toFixed(3) : null) // float atlas: fixed decimals
+      } else {
+        const id = Math.round(raw)
+        coordEditor.setOverlay(id !== 0 ? String(id) : null) // parcellation: numeric id only
+      }
+      return
+    }
+    if (target === 'function' && funcChoice) {
+      const vox = view.functionCrosshairVox()
+      const v = vox ? view.sampleFunctionFrame(vox, funcChoice.mode.valueFrame) : NaN
+      coordEditor.setOverlay(num(v))
+      return
+    }
+    if (target === 'morphology' && currentNode) {
+      const metric = morphActiveMetric()
+      const a = morphShape[metric]?.[currentNode.hemi]
+      const v = a && currentNode.index < a.length ? a[currentNode.index] : NaN
+      coordEditor.setOverlay(num(v))
+      return
+    }
+    coordEditor.setOverlay(null) // nothing overlaid on the docked tab
   }
 
   const loadReportSpecs = (m: Manifest): void => {
@@ -1563,6 +1614,7 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
           updateFunctionReport()
           updateVisualField()
           updateSurfaceReport()
+          updateOverlayValue()
         })
       }
 

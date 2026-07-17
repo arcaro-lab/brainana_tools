@@ -13,6 +13,10 @@ export function createMainWindow(url, { appLabel = 'Brainana' } = {}) {
     title: appLabel,
     backgroundColor: '#0b0d10', // avoid a white flash before the SPA paints
     show: false,
+    // Hide the in-window menu bar (Linux/Windows) while keeping the menu installed, so its
+    // accelerators (Quit, Copy/Paste, Reload, DevTools, Zoom, Fullscreen) still work. Alt
+    // momentarily reveals the bar. No-op on macOS, where the menu lives in the system bar.
+    autoHideMenuBar: true,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,

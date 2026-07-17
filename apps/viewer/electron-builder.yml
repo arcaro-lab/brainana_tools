@@ -14,6 +14,9 @@ asarUnpack:
 
 directories:
   output: apps/viewer/release
+  # Icon source: electron-builder auto-detects build/icon.png (1024x1024) and generates
+  # the .icns (mac), .ico (win) and PNG set (linux) from it via its bundled app-builder.
+  buildResources: apps/viewer/build
 
 # App payload: the built SPA (Vite bundles NiiVue/fflate/nifti-reader-js into dist/, so those
 # devDependencies are NOT shipped as node_modules) + the app's own .mjs server/desktop code +

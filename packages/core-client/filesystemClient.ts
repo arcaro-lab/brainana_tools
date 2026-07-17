@@ -51,6 +51,15 @@ export interface BrowseListing {
   entries: BrowseEntry[]
 }
 
+// A host parsed from the server user's ~/.ssh/config, offered as a recall option in the remote
+// connect form. `host` is the alias; `hostName` is the real address when the config specifies one.
+export interface SshHost {
+  host: string
+  hostName?: string
+  user?: string
+  port?: number
+}
+
 // The manifest shape is broad and consumed structurally by the viewer; keep it open here.
 export type Manifest = Record<string, unknown> & { id: string; label: string; session: string | null }
 
@@ -81,6 +90,12 @@ export class FilesystemClient {
   // no source yet). Empty `abs` lets the server default to its home directory.
   browseFs(abs = ''): Promise<BrowseListing> {
     return this.#client.apiJson(`/api/fs/browse?path=${encodeURIComponent(abs)}`)
+  }
+
+  // Known hosts from the server user's ~/.ssh/config, to seed the remote-connect recall dropdown.
+  // Best-effort: the server returns [] when there is no config.
+  sshHosts(): Promise<SshHost[]> {
+    return this.#client.apiJson('/api/ssh-hosts')
   }
 
   // Open a pre-add SFTP connection for interactive remote browsing; returns a session token used

@@ -237,7 +237,7 @@ input[type="range"]:focus { outline: none; }
   display: grid; min-height: 0;
   grid-template-columns:
     var(--info-c1, 180px)   /* Coordinates */
-    var(--info-c2, 600px)   /* Atlas (1.5× wider) */
+    var(--info-c2, 500px)   /* Atlas */
     var(--info-c3, 210px)   /* Surface     */
     var(--info-c4, 340px)   /* Function    */
     minmax(150px, 1fr);     /* Visual field */
@@ -392,6 +392,8 @@ input[type="range"]:focus { outline: none; }
 .dialog { background: var(--panel); border: 1px solid var(--border-2); border-radius: var(--r-lg); padding: var(--sp-6); width: min(680px, 92vw); max-height: 88vh; overflow: auto; box-shadow: var(--shadow); }
 .dialog-head { display: flex; align-items: center; gap: var(--sp-4); margin-bottom: var(--sp-5); }
 .dialog-head h2 { margin: 0; font-size: var(--fs-3); }
+/* Footer action row: the next-step primary button pinned bottom-right (mirrors .dialog-head). */
+.dialog-foot { display: flex; align-items: center; gap: var(--sp-4); margin-top: var(--sp-6); }
 .source-list { margin-bottom: var(--sp-6); }
 /* Datasets render as a single-framed table with subtle zebra rows — quieter than the old
    per-row bordered boxes. Columns: type badge / derived name / editable custom label / remove. */
@@ -413,14 +415,21 @@ input[type="range"]:focus { outline: none; }
 /* Remote connection: a "recent" recall row on top, a 2-column field grid, then Connect bottom-right. */
 .conn-recall { margin-bottom: var(--sp-4); }
 .conn-recall > .muted { flex: 0 0 auto; font-size: var(--fs-sm); }
+/* Persistent "connected to user@host" indicator, shown between the connect row and the add row. */
+.conn-banner { margin: var(--sp-2) 0; }
+/* Keep the two forms' primary "add" buttons a consistent width so their columns line up, and give
+   the small recall/disconnect buttons equal width so they stop jittering. Scoped to the dialog. */
+.source-form .primary { min-width: 64px; }
+.source-form .ghost.sm { min-width: 56px; }
 .port-input { max-width: var(--num-w); }
 .port-field { flex: 0 0 auto; }
 .field { display: flex; flex-direction: column; gap: var(--field-gap); margin-bottom: var(--row-gap); }
 .field > span { font-size: var(--fs-sm); color: var(--muted); }
 .row { display: flex; gap: var(--sp-3); align-items: center; }
 .row .field { flex: 1; }
-/* Square folder-icon button beside the Folder input; matches .ghost's outline treatment. */
-.icon-btn { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; padding: 0; background: transparent; border: 1px solid var(--border-2); border-radius: var(--r-md); color: var(--text); cursor: pointer; transition: border-color var(--dur) var(--ease), color var(--dur) var(--ease); }
+/* Square folder-icon button beside the path input; height-driven to --ctl-h so it lines up with the
+   inputs and buttons on its row (matches .ghost's outline treatment). */
+.icon-btn { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: var(--ctl-h); height: var(--ctl-h); padding: 0; background: transparent; border: 1px solid var(--border-2); border-radius: var(--r-md); color: var(--text); cursor: pointer; transition: border-color var(--dur) var(--ease), color var(--dur) var(--ease); }
 .icon-btn:hover { border-color: var(--accent); color: var(--accent-2); }
 /* Folder-picker overlay (layered over the Datasets dialog). */
 .fs-picker { width: min(540px, 92vw); }

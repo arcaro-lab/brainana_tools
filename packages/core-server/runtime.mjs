@@ -73,6 +73,52 @@ function browseDir(requested) {
   return { path: current, parent: parent === current ? null : parent, entries }
 }
 
+// Parse the server user's ~/.ssh/config into a flat list of concrete hosts for the remote-connect
+// recall dropdown. Deliberately minimal: only top-level `Host` blocks with their `HostName`/`User`/
+// `Port` — no `Include`/`Match`/token expansion. Wildcard patterns (`Host *`, `prod-?`) are skipped
+// since they don't name a connectable host. Missing/unreadable file → []. Runs on the same loopback,
+// single-user machine as the browser, so exposing these aliases over the token-guarded API is no
+// wider than the folder picker already is. Exported for unit testing.
+export function readSshHosts() {
+  let text
+  try {
+    text = fs.readFileSync(path.join(os.homedir(), '.ssh', 'config'), 'utf8')
+  } catch {
+    return [] // no config, or not readable
+  }
+  const hosts = []
+  let current = null // { host, hostName, user, port } for the block being read
+  const flush = () => {
+    if (current) hosts.push(current)
+    current = null
+  }
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (!line || line.startsWith('#')) continue
+    // Keyword and value split on whitespace or a single '=' (both are valid ssh_config syntax).
+    const match = line.match(/^(\w+)\s*=?\s*(.*)$/)
+    if (!match) continue
+    const keyword = match[1].toLowerCase()
+    const value = match[2].trim()
+    if (keyword === 'host') {
+      flush()
+      // A Host line may list several patterns; take the first concrete (non-wildcard) alias.
+      const alias = value.split(/\s+/).find((p) => p && !p.includes('*') && !p.includes('?'))
+      if (alias) current = { host: alias }
+      continue
+    }
+    if (!current) continue // a keyword before any Host block — ignore
+    if (keyword === 'hostname') current.hostName = value
+    else if (keyword === 'user') current.user = value
+    else if (keyword === 'port') {
+      const n = Number(value)
+      if (Number.isFinite(n)) current.port = n
+    }
+  }
+  flush()
+  return hosts
+}
+
 function sendJson(res, status, value) {
   res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
   res.end(JSON.stringify(value))
@@ -280,6 +326,12 @@ export function createServer({ token = null, distRoot = null, initialSources = [
         }
       }
 
+      // Known hosts from the server user's ~/.ssh/config, offered as recall options in the remote
+      // connect form. Read-only, best-effort (empty list when there's no config); same token guard.
+      if (pathname === '/api/ssh-hosts' && req.method === 'GET') {
+        return sendJson(res, 200, readSshHosts())
+      }
+
       // ---- Remote browse: connect once, then list arbitrary remote directories before adding the
       // source (the SftpDataSource is locked to a fixed remoteRoot and cannot browse above it).
       // Same loopback bind + token guard as every other /api route; passwords are never stored. ----
@@ -327,10 +379,28 @@ export function createServer({ token = null, distRoot = null, initialSources = [
         try {
           const spec = await jsonBody(req)
           const source = await openSource(spec)
+          // Reject a folder with no subjects before registering it, so the user learns immediately
+          // (rather than at the empty monkey picker) and can pick a valid one. Applies to both source
+          // types via the shared listMonkeys contract; close the just-opened source to free its
+          // socket/mirror on rejection.
+          let monkeys
+          try {
+            monkeys = await source.listMonkeys()
+          } catch (scanError) {
+            await source.close?.()
+            throw scanError
+          }
+          if (monkeys.length === 0) {
+            await source.close?.()
+            throw Object.assign(
+              new Error('No sub-* subjects here. Choose a Brainana output folder.'),
+              { statusCode: 400 },
+            )
+          }
           registry.add(source, { type: source.type })
           return sendJson(res, 200, { id: source.id, type: source.type, label: source.label, customLabel: source.customLabel ?? null })
         } catch (error) {
-          return sendJson(res, 400, { error: error instanceof Error ? error.message : String(error) })
+          return sendJson(res, error?.statusCode || 400, { error: error instanceof Error ? error.message : String(error) })
         }
       }
       // Rename a source's display label (RAM-only). Matched before the scoped `:id/<action>`
