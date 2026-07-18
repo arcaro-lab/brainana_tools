@@ -13,7 +13,7 @@ Cross-platform NiiVue viewer for per-subject (`sub-*`) output of the
 > (foundation, core platform, unified multi-source data path); Phase 3 (NiiVue SPA)
 > substantially built; Phase 4 desktop packaging (Electron) built and verified, with a
 > tag-triggered GitHub Actions release pipeline for Mac/Windows/Linux installers. The full
-> browser/test matrix is still ahead. See [docs/technical-route.md](docs/technical-route.md).
+> browser/test matrix is still ahead.
 
 ## Download & install
 
@@ -29,8 +29,7 @@ Node, no build, no command line. Pick the file that matches your system:
 
 > **First launch:** the app is currently **unsigned**, so macOS and Windows show a one-time
 > "unidentified developer" prompt. On macOS **right-click → Open**; on Windows choose **More info
-> → Run anyway**. Linux has no prompt. Full per-OS steps are in
-> [docs/publishing.md](docs/publishing.md#what-your-users-will-see-unsigned-build).
+> → Run anyway**. Linux has no prompt.
 
 Not sure which Mac chip you have? **Apple menu → About This Mac.** No account, dataset, or setup
 is required — a demo subject is bundled so you can open the app and look around immediately.
@@ -59,15 +58,11 @@ npm run dev:desktop    # launch as a native Electron app (bundled Chromium)
 npm run dist:desktop   # build desktop installers for THIS OS → apps/viewer/release/
 ```
 
-- [docs/dev_guideline.md](docs/dev_guideline.md) — two-process model, ports, troubleshooting.
-- [docs/desktop-app.md](docs/desktop-app.md) — the Electron shell (how the desktop app is built).
-- [docs/publishing.md](docs/publishing.md) — **how to publish a release** (tag → CI builds all-OS installers → GitHub Release).
-
 ## Architecture
 
 An **npm-workspaces monorepo**: tool-agnostic shared `packages/*` consumed by per-tool
 `apps/*`. Adding a sibling tool (Aligner, Editor) means a new `apps/<tool>/` — no duplicated
-platform code ([docs/adding-a-tool.md](docs/adding-a-tool.md)).
+platform code.
 
 | Package             | Responsibility                                                        |
 | ------------------- | --------------------------------------------------------------------- |
@@ -101,5 +96,4 @@ See `packages/core-server/security.mjs`.
 Licensed under the **GNU Affero General Public License v3.0** (AGPL-3.0), the same license
 as the parent [**Brainana**](https://github.com/xingyu-liu/brainana) pipeline. See
 [LICENSE](LICENSE). Bundled fonts (Source Sans 3, IBM Plex Mono) are under the SIL Open Font
-License 1.1 ([packages/ui/fonts/](packages/ui/fonts/)); full dependency inventory in
-[docs/dependency-audit.md](docs/dependency-audit.md).
+License 1.1 ([packages/ui/fonts/](packages/ui/fonts/)).

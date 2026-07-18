@@ -7,7 +7,7 @@ import type { RuntimeClient } from '@brainana/core-client/runtimeClient.ts'
 import type { SourceManager } from '@brainana/core-client/sourceManager.ts'
 import type { FilesystemClient, MonkeySummary } from '@brainana/core-client/filesystemClient.ts'
 import type { Manifest, SurfacePair } from '../types.ts'
-import { MultiView, type SurfaceNode, type SurfacePairUrls, type MorphologyDisplay, type MorphologyDisplayMetric, type MorphologyMetric, type MorphologyShapePairs, type CurvatureStyle } from '../niivue/multiView.ts'
+import { MultiView, MORPH_DEFAULT_COLORMAP, type SurfaceNode, type SurfacePairUrls, type MorphologyDisplay, type MorphologyDisplayMetric, type MorphologyMetric, type MorphologyShapePairs, type CurvatureStyle } from '../niivue/multiView.ts'
 import { Marker } from '@brainana/niivue-kit/marker.ts'
 import { OrientationGizmo } from '@brainana/niivue-kit/orientation.ts'
 import { createViewerStore, type Layout } from '../state/store.ts'
@@ -169,9 +169,6 @@ const MORPH_DEFAULT_RANGE: Record<MorphologyMetric, { min: number; max: number }
   sulc: { min: -3, max: 3 },
   thickness: { min: 1, max: 3 },
 }
-// Default continuous colormap + symmetric-range preference per metric (used by Reset).
-const MORPH_DEFAULT_COLORMAP: Record<MorphologyMetric, string> = { curvature: 'gray', sulc: 'blue2red', thickness: 'viridis' }
-const MORPH_DEFAULT_SYMMETRIC: Record<MorphologyMetric, boolean> = { curvature: true, sulc: true, thickness: false }
 
 export function mountDashboard(root: HTMLElement, deps: Deps): void {
   const { client, files, sources } = deps
@@ -229,6 +226,7 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
     max: 3,
     step: 0.1,
     value: 1,
+    hideBox: true, // tight toolbar slot; the number box overflowed onto the mode select
     onInput: (v) => {
       marker?.setSize(v)
       placeMarker()
@@ -265,25 +263,24 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
     tbDivide(),
     // col 2: Dataset (row 1) · Monkey (row 2)
     h('div', { class: 'tb-cell' }, [datasetBtn]),
-    h('div', { class: 'tb-cell' }, [h('label', { class: 'tb-field' }, ['monkey', monkeySelect])]),
+    h('div', { class: 'tb-cell' }, [monkeySelect]),
     tbDivide(),
-    // col 3: vol (row 1) · surf + LH/RH (row 2)
+    // col 3: vol (row 1) · surf (row 2). LH/RH moved to col 4 row 1 (freed by the underlay rail).
     h('div', { class: 'tb-cell' }, [h('label', { class: 'tb-field inline' }, [volCheck, h('span', {}, ['vol']), volSelect])]),
     h('div', { class: 'tb-cell' }, [
       h('label', { class: 'tb-field inline' }, [surfCheck, h('span', {}, ['surf']), surfSelect]),
-      h('label', { class: 'tb-field inline' }, [lhCheck, h('span', {}, ['LH'])]),
-      h('label', { class: 'tb-field inline' }, [rhCheck, h('span', {}, ['RH'])]),
     ]),
     tbDivide(),
     // col 3b: view section — slice montage layouts (row 1) · surface view presets (row 2)
     h('div', { class: 'tb-cell' }, [h('div', { class: 'montage' }, layoutBtns)]),
     h('div', { class: 'tb-cell' }, [h('div', { class: 'views' }, viewBtns)]),
     tbDivide(),
-    // col 4: Marker / Crosshair — crosshair + AP/SI/LR in the vol row (row 1); surface marker +
+    // col 4: LH/RH hemisphere toggles in the vol row (row 1) — occupying the slot vacated by the
+    // crosshair + AP/SI/LR toggles, which now live in the right-hand underlay rail; surface marker +
     // size + placement mode in the surf row (row 2).
     h('div', { class: 'tb-cell' }, [
-      h('label', { class: 'tb-field inline' }, [crosshairCheck, h('span', {}, ['crosshair'])]),
-      h('label', { class: 'tb-field inline' }, [orientCheck, h('span', {}, ['AP/SI/LR'])]),
+      h('label', { class: 'tb-field inline' }, [lhCheck, h('span', {}, ['LH'])]),
+      h('label', { class: 'tb-field inline' }, [rhCheck, h('span', {}, ['RH'])]),
     ]),
     h('div', { class: 'tb-cell marker-controls' }, [
       h('label', { class: 'tb-field inline' }, [markerCheck, h('span', {}, ['marker'])]),
@@ -306,6 +303,9 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
   // aside) anchored to the column seam via CSS, so it's reliably on top and grabbable (Req 4).
   const panelResizer = h('div', { class: 'panel-resizer', title: 'Drag to resize the panel' })
   const infoResizer = h('div', { class: 'info-resizer', title: 'Drag to resize the info panel' })
+  // Splitter on the underlay rail's right edge — drags --rail-w, sizing the rail column only. The
+  // Coordinates info column shares the same 168px start but is independent (its own --info-c1 seam).
+  const railResizer = h('div', { class: 'rail-resizer', title: 'Drag to resize the underlay rail' })
   // The side panel docks the active category's picker at the top (`sidePicker`) with
   // category-specific content below (`sideContent`): the atlas ROI legend, or a light caption for
   // function / morphology. Exactly one content slot is visible at a time (driven by `updateTabUI`).
@@ -357,9 +357,169 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
   }
   const loadingText = h('div', { class: 'loading-text' }, ['Loading…'])
   const loadingOverlay = h('div', { class: 'loading-overlay', hidden: true }, [h('div', { class: 'spinner' }), loadingText])
-  const main = h('main', { class: 'dashboard' }, [viewerArea, atlasLegend, panelResizer, infoResizer, infoPanel, placeholder, loadingOverlay])
+  const main = h('main', { class: 'dashboard' }, [viewerArea, atlasLegend, panelResizer, infoResizer, railResizer, infoPanel, placeholder, loadingOverlay])
 
-  root.append(toolbar, main)
+  // --- right underlay rail: base-volume intensity window (brightness/contrast ↔ display min/max),
+  // value clip, montage zoom, plus the crosshair + AP/SI/LR toggles moved out of the top bar. All
+  // four intensity controls drive the same cal_min/cal_max window (NiiVue has no separate brightness);
+  // brightness=center, contrast=width, display boxes=ends — edits on either side mirror to the other.
+  let volGlobalMin = 0
+  let volGlobalMax = 1
+  let volRobustMin = 0
+  let volRobustMax = 1
+  let volCalLo = 0
+  let volCalHi = 1
+  let volClipLo: number | null = null
+  let volClipHi: number | null = null
+  let volSyncing = false // suppress the slider→box→slider feedback loop while mirroring
+
+  const fmtVol = (v: number): string => v.toFixed(4)
+  const numBox = (): HTMLInputElement => h('input', { type: 'number', class: 'range-num' }) as HTMLInputElement
+  const clamp01 = (x: number): number => Math.max(0, Math.min(1, x))
+  const volSpan = (): number => volGlobalMax - volGlobalMin || 1
+
+  const f2 = (v: number): string => v.toFixed(2)
+  const briSlider = createSlider({ label: 'brightness', min: 0, max: 1, step: 0.01, value: 0.5, format: f2, onInput: () => onBriConInput() })
+  const conSlider = createSlider({ label: 'contrast', min: 0, max: 1, step: 0.01, value: 0.5, format: f2, onInput: () => onBriConInput() })
+  const zoomSlider = createSlider({ label: 'zoom', min: 0.5, max: 4, step: 0.1, value: 1, format: f2, onInput: (v) => view?.setVolumeZoom(v) })
+  const dispMinBox = numBox()
+  const dispMaxBox = numBox()
+  const clipMinBox = numBox()
+  const clipMaxBox = numBox()
+
+  const applyVolumeWindow = (): void => view?.setVolumeWindow(volCalLo, volCalHi, volClipLo, volClipHi)
+  const setDisplayBoxes = (): void => {
+    dispMinBox.value = fmtVol(volCalLo)
+    dispMaxBox.value = fmtVol(volCalHi)
+  }
+  // Window ends → brightness/contrast sliders. brighter = lower window center; more contrast = narrower.
+  const windowToSliders = (): void => {
+    const s = volSpan()
+    const width = volCalHi - volCalLo
+    const center = (volCalLo + volCalHi) / 2
+    volSyncing = true
+    conSlider.setValue(clamp01(1 - width / s))
+    briSlider.setValue(clamp01(1 - (center - volGlobalMin) / s))
+    volSyncing = false
+  }
+  // Brightness/contrast sliders → window ends, then reflect into the display boxes.
+  const slidersToWindow = (): void => {
+    const s = volSpan()
+    let width = s * (1 - conSlider.value())
+    const minWidth = s * 0.005 // guard: never a zero/negative window
+    if (width < minWidth) width = minWidth
+    const center = volGlobalMin + (1 - briSlider.value()) * s
+    volCalLo = Math.max(volGlobalMin, center - width / 2)
+    volCalHi = Math.min(volGlobalMax, center + width / 2)
+    setDisplayBoxes()
+    applyVolumeWindow()
+  }
+  const onBriConInput = (): void => {
+    if (volSyncing) return
+    slidersToWindow()
+  }
+  const onDisplayBoxEdit = (): void => {
+    let lo = Number(dispMinBox.value)
+    let hi = Number(dispMaxBox.value)
+    if (!Number.isFinite(lo)) lo = volCalLo
+    if (!Number.isFinite(hi)) hi = volCalHi
+    if (lo > hi) [lo, hi] = [hi, lo] // swap an inverted entry so the window stays valid
+    // Clamp to the volume's real extents so the derived brightness/contrast sliders (windowToSliders
+    // maps the window into [0,1]) can represent the window — an out-of-range entry would otherwise
+    // pin a slider to its rail and the next drag would snap the window back, discarding the typed value.
+    volCalLo = Math.max(volGlobalMin, Math.min(volGlobalMax, lo))
+    volCalHi = Math.max(volGlobalMin, Math.min(volGlobalMax, hi))
+    setDisplayBoxes()
+    windowToSliders()
+    applyVolumeWindow()
+  }
+  const onClipBoxEdit = (): void => {
+    const lo = clipMinBox.value.trim() === '' ? NaN : Number(clipMinBox.value)
+    const hi = clipMaxBox.value.trim() === '' ? NaN : Number(clipMaxBox.value)
+    let clipLo = Number.isFinite(lo) ? lo : null // empty / non-numeric = open on that side
+    let clipHi = Number.isFinite(hi) ? hi : null
+    // Swap an inverted [lo, hi] (matching onDisplayBoxEdit) so it never collapses to an empty window
+    // that masks the whole underlay to black with no feedback. Only meaningful when both ends are set.
+    if (clipLo !== null && clipHi !== null && clipLo > clipHi) {
+      ;[clipLo, clipHi] = [clipHi, clipLo]
+      clipMinBox.value = fmtVol(clipLo)
+      clipMaxBox.value = fmtVol(clipHi)
+    }
+    volClipLo = clipLo
+    volClipHi = clipHi
+    applyVolumeWindow()
+  }
+  dispMinBox.addEventListener('change', onDisplayBoxEdit)
+  dispMaxBox.addEventListener('change', onDisplayBoxEdit)
+  clipMinBox.addEventListener('change', onClipBoxEdit)
+  clipMaxBox.addEventListener('change', onClipBoxEdit)
+
+  const setVolRailEnabled = (on: boolean): void => {
+    briSlider.setDisabled(!on)
+    conSlider.setDisabled(!on)
+    zoomSlider.setDisabled(!on)
+    for (const b of [dispMinBox, dispMaxBox, clipMinBox, clipMaxBox]) b.disabled = !on
+  }
+  // Seed (on load) or restore (Reset) the rail to the volume's defaults: display window = robust
+  // range, clip cleared, zoom = 1. No-op with the controls disabled when no base volume is present.
+  const syncVolumeControls = (): void => {
+    const r = view?.baseVolumeRange()
+    if (!r) {
+      setVolRailEnabled(false)
+      volRail.hidden = true // no base volume (e.g. welcome screen) — keep the rail out of the layout
+      return
+    }
+    volRail.hidden = false
+    setVolRailEnabled(true)
+    volGlobalMin = r.globalMin
+    volGlobalMax = r.globalMax
+    volRobustMin = r.robustMin
+    volRobustMax = r.robustMax
+    volCalLo = volRobustMin
+    volCalHi = volRobustMax
+    volClipLo = null
+    volClipHi = null
+    clipMinBox.value = ''
+    clipMaxBox.value = ''
+    setDisplayBoxes()
+    windowToSliders()
+    zoomSlider.setValue(1)
+    view?.resetVolumeZoom() // neutral centred pan+zoom (not a crosshair-anchored zoom-to-1)
+    applyVolumeWindow()
+  }
+
+  const volResetBtn = h('button', { type: 'button', class: 'ghost sm' }, ['reset']) as HTMLButtonElement
+  volResetBtn.addEventListener('click', () => syncVolumeControls())
+  // Shared 3-column grid: [label (52px)] [min/max span (auto)] [number input (1fr)]
+  // All four rows (display-min, display-max, clip-min, clip-max) share the same column edges.
+  const volDisplayClipGrid = h('div', { class: 'vol-dc-grid' }, [
+    h('span', { class: 'vol-dc-label' }, ['display']),
+    h('label', { class: 'vol-dc-row' }, [h('span', { class: 'vol-dc-mm' }, ['min']), dispMinBox]),
+    h('span', { class: 'vol-dc-label' }),
+    h('label', { class: 'vol-dc-row' }, [h('span', { class: 'vol-dc-mm' }, ['max']), dispMaxBox]),
+    h('span', { class: 'vol-dc-label' }, ['clip']),
+    h('label', { class: 'vol-dc-row' }, [h('span', { class: 'vol-dc-mm' }, ['min']), clipMinBox]),
+    h('span', { class: 'vol-dc-label' }),
+    h('label', { class: 'vol-dc-row' }, [h('span', { class: 'vol-dc-mm' }, ['max']), clipMaxBox]),
+  ])
+  const volRail = h('aside', { class: 'vol-rail' }, [
+    h('div', { class: 'vol-rail-head' }, [h('span', { class: 'vol-rail-title' }, ['underlay']), volResetBtn]),
+    briSlider.element,
+    conSlider.element,
+    volDisplayClipGrid,
+    h('div', { class: 'vol-rail-toggles' }, [
+      zoomSlider.element,
+      h('label', { class: 'tb-field inline' }, [crosshairCheck, h('span', {}, ['crosshair'])]),
+      h('label', { class: 'tb-field inline' }, [orientCheck, h('span', {}, ['AP/SI/LR'])]),
+    ]),
+  ])
+  setVolRailEnabled(false) // disabled until a base volume loads
+  volRail.hidden = true // hidden on the welcome screen; revealed by syncVolumeControls once a volume loads
+  // Rail is col 1 / row 1 of the dashboard grid, so it stops at the info panel (row 2) and the
+  // info panel — spanning grid-column 1/-1 — reaches under it to the far-left edge.
+  main.insertBefore(volRail, main.firstChild)
+
+  root.append(toolbar, h('div', { class: 'content-row' }, [main]))
 
   // The viewport height settles only after the fullscreen transition finishes — the initial
   // layout can be a few px short, leaving a first-paint artifact at the bottom edge that only
@@ -444,6 +604,37 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
     panelResizer.addEventListener('pointercancel', end)
   }
 
+  // Drag the underlay rail's right edge: update --rail-w (the shared base width of the rail column
+  // and the Coordinates info column). Clamped so the rail never starves the viewer or collapses.
+  {
+    let dragging = false
+    const setWidth = (clientX: number): void => {
+      const rect = main.getBoundingClientRect()
+      const w = Math.max(120, Math.min(rect.width - 360, clientX - rect.left))
+      main.style.setProperty('--rail-w', `${Math.round(w)}px`)
+      view?.resize()
+    }
+    railResizer.addEventListener('pointerdown', (e) => {
+      dragging = true
+      railResizer.setPointerCapture(e.pointerId)
+      e.preventDefault()
+    })
+    railResizer.addEventListener('pointermove', (e) => {
+      if (dragging) setWidth(e.clientX)
+    })
+    const end = (e: PointerEvent): void => {
+      if (!dragging) return
+      dragging = false
+      try {
+        railResizer.releasePointerCapture(e.pointerId)
+      } catch {
+        /* pointer already released */
+      }
+    }
+    railResizer.addEventListener('pointerup', end)
+    railResizer.addEventListener('pointercancel', end)
+  }
+
   // No more persistent "Ready · …" status (Req 5). Loading/errors surface in a centered overlay
   // over the viewer while a subject renders (Req 17); other transient progress is dropped.
   const showLoading = (text: string): void => {
@@ -467,7 +658,6 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
   let gizmo: OrientationGizmo | null = null
   let manifest: Manifest | null = null
   let currentNode: SurfaceNode | null = null
-  let surfaceScaled = false // apply the per-surface zoom only once per subject (Req 11)
 
   // Editable crosshair coordinates: X/Y/Z (world mm) and I/J/K (base-volume voxel). Typing a value
   // moves the crosshair; the fields refresh from the crosshair on each move (except the one being
@@ -573,9 +763,8 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
     sulc: { ...MORPH_DEFAULT_RANGE.sulc },
     thickness: { ...MORPH_DEFAULT_RANGE.thickness },
   }
-  const morphSymmetric: Record<MorphologyMetric, boolean> = { curvature: true, sulc: true, thickness: false }
   // Per-metric colormap override for the continuous morphology layers (binary curvature is fixed).
-  const morphColormaps: Partial<Record<MorphologyMetric, string>> = { curvature: 'gray', sulc: 'blue2red', thickness: 'viridis' }
+  const morphColormaps: Partial<Record<MorphologyMetric, string>> = { ...MORPH_DEFAULT_COLORMAP }
   // Per-metric two-sided clip (as in function): vertices outside [lo, hi] render transparent. Default
   // open (full domain).
   const morphClip: Record<MorphologyMetric, { lo: number | null; hi: number | null }> = {
@@ -626,17 +815,20 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
   }
 
   // Apply the current atlas colormap to BOTH the volume slices and the 3D surface (Req: a colormap
-  // change must recolor both). Categorical (`atlasColormap === null`): the per-ROI label table.
-  // Continuous (a colormap key — default for float atlases, or forced onto a parcellation): quantize
-  // values over [domain.min, atlasDisplayMax] into a shared ramp LUT, identical on volume + surface.
+  // change must recolor both). Categorical (`atlasColormap === null`, "none"): the per-ROI label
+  // table; visibility is driven solely by the ROI list (atlasHidden) — labels mode has no display
+  // range or clip. Continuous (a colormap key — default for float atlases, or forced onto a
+  // parcellation): quantize values over the display window into a shared ramp LUT (identical on
+  // volume + surface) and mask voxels/vertices outside the clip window.
   function applyAtlasColormap(): void {
     if (!view) return
     if (atlasColormap) {
       const cmapLut = colormapLuts[atlasColormap] ?? view.colormapLut(atlasColormap)
       if (!cmapLut) return
-      const range = { min: atlasDomain.min, max: atlasDisplayMax }
-      view.setAtlasContinuous(cmapLut, range) // volume slices
-      if (atlasSurfacePair) void view.setAtlasSurfaceContinuous(atlasSurfacePair, cmapLut, range, atlasOpacity) // surface
+      const range = { min: atlasDisplayMin, max: atlasDisplayMax }
+      const clip = { lo: atlasClipLo, hi: atlasClipHi }
+      view.setAtlasContinuous(cmapLut, range, clip) // volume slices
+      if (atlasSurfacePair) void view.setAtlasSurfaceContinuous(atlasSurfacePair, cmapLut, range, atlasOpacity, clip) // surface
     } else {
       if (atlasEntries.length) view.setAtlasColortable(buildLabelColortable(atlasEntries, { seed: atlasSeed, hidden: atlasHidden })) // slices (keeps negatives)
       void view.updateSurfaceOverlayTable(buildLabelColortable(atlasEntries, { seed: atlasSeed, hidden: atlasHidden, clipNegative: true })) // surface
@@ -689,7 +881,10 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
       atlasSurfacePair = entry.surface ?? null
       atlasContinuous = view.atlasIsContinuous()
       atlasDomain = view.atlasValueRange()
+      atlasDisplayMin = atlasDomain.min
       atlasDisplayMax = atlasDomain.max
+      atlasClipLo = null
+      atlasClipHi = null
       if (atlasContinuous) {
         // Continuous (float scalar) gradient: no discrete ROIs. Render with the default colormap on
         // BOTH volume + surface; the ROI list is meaningless, so clear it (COLOR DISPLAY shows the bar).
@@ -729,12 +924,8 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
     if (!view || !manifest) return
     const pair = manifest.surfaces[kind as keyof Manifest['surfaces']]
     await view.setSurface(pair, morphologyShapePairs(manifest), buildSurfaceOverlay(), morphDisplay())
-    // Scale to fit only the first surface of a subject; switching surface type keeps the
-    // current zoom/orientation (Req 11).
-    if (!surfaceScaled) {
-      view.setSurfaceScale(kind)
-      surfaceScaled = true
-    }
+    // Note: no auto-fit here — the initial fit runs in the load flow (after the layout sizes the
+    // pane); switching surface type keeps the current zoom/orientation (Req 11).
     applyHemiVisibility()
     placeMarker() // re-place the pin at the same node on the new surface geometry
   }
@@ -751,6 +942,7 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
     if (!vol) return
     try {
       await view.setBaseVolume(vol.url, paneState().vol ? 1 : 0)
+      syncVolumeControls() // re-seed the underlay rail for the switched volume's intensity range
       store.set('volumeKey', vol.key)
     } catch {
       // volume switch failure is non-fatal — the previous base volume stays loaded
@@ -814,11 +1006,16 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
   let atlasColormap: string | null = null
   const LABELS_KEY = 'labels'
   const CONTINUOUS_DEFAULT = 'magma' // default colormap for continuous (float scalar) atlases
-  // Continuous-atlas display state: whether the loaded atlas is a gradient, its fixed data-value
-  // domain, and the current (draggable) upper bound. Lower bound stays pinned at the domain min.
+  // Atlas display state: whether the loaded atlas is a gradient, its fixed data-value (or label-id)
+  // domain, and the current (draggable) display window + value clip. For a continuous atlas the window
+  // remaps the ramp and the clip hides voxels outside [lo, hi]; for a categorical atlas the clip hides
+  // ROIs whose id falls outside [lo, hi] (the display window is inert — colors come from the table).
   let atlasContinuous = false
   let atlasDomain = { min: 0, max: 1 }
+  let atlasDisplayMin = 0
   let atlasDisplayMax = 1
+  let atlasClipLo: number | null = null
+  let atlasClipHi: number | null = null
   // Per-hemisphere parsed frames of the currently loaded function surface .func.gii, cached so a
   // threshold/brightness drag re-quantizes in place without re-fetching (keyed by choice.kind).
   let funcSurfaceFrames: { kind: string; left: Float32Array[]; right: Float32Array[] } | null = null
@@ -869,11 +1066,14 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
     // the prebuilt asset, fall back to a live LUT lookup, and only then to the built-in retinotopy ramp.
     const cmapLut = colormapLuts[funcColormapKey()] ?? view.colormapLut(funcColormapKey())
     const lut = cmapLut ? surfaceLutFromColormap(cmapLut, funcBrightness).lut : createFunctionalSurfaceLut(mode, funcBrightness).lut
-    // Quantize over the map's natural domain (display range isn't exposed for function overlays),
-    // then mask by both the F-threshold and the value clip (so clip hides the same vertices as voxels).
+    // Quantize over the user display window for maps that expose one (somatotopy) so the surface
+    // tracks the same contrast as the volume's display-range remap; retinotopy (polar/eccentricity)
+    // has no display range, so it keeps its fixed cyclic/natural domain (range = undefined). Then
+    // mask by both the F-threshold and the value clip (so clip hides the same vertices as voxels).
+    const range = funcChoice.kind === 'retinotopy' ? undefined : { min: funcCalMin, max: funcCalMax }
     const binsFor = (frames: Float32Array[]): Float32Array => {
       const value = frames[valueFrame] ?? new Float32Array(0)
-      let bins = quantizeFunctionalSurfaceValues(value, mode)
+      let bins = quantizeFunctionalSurfaceValues(value, mode, range)
       if (fFrame != null && frames[fFrame]) bins = maskSurfaceBinsByF(bins, frames[fFrame], funcThreshold)
       if (funcClipLo != null || funcClipHi != null) bins = maskSurfaceBinsByValue(bins, value, funcClipLo, funcClipHi)
       return bins
@@ -975,6 +1175,15 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
     }
   }
 
+  // Single entry point that recolors BOTH the volume slices and the 3D surface for the function
+  // overlay, so callers never have to remember to pair applyFunctional + applyFunctionSurface (a
+  // missed pairing silently desyncs slices from mesh). Exactly one surface pass — safe against the
+  // func-surface layer race (never fire a second applyFunctionSurface() alongside this).
+  const applyFunctionColor = (): void => {
+    applyFunctionNow()
+    void applyFunctionSurface()
+  }
+
   // Preserved function display settings, carried verbatim across a monkey switch (else recomputed to
   // this map's defaults). Passing these THROUGH selectFunction keeps the surface application a single
   // pass — applying it via a second applyFunctionSurface() would race the first (from inside
@@ -1018,8 +1227,7 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
         funcThreshold = preserve ? preserve.threshold : 0
         functionPanel?.setThresholdBounds(0, 0, 0)
       }
-      applyFunctionNow()
-      void applyFunctionSurface()
+      applyFunctionColor() // single vol+surf pass (one applyFunctionSurface — see race note above)
       updateFunctionReport()
       updateVisualField()
     } catch (err) {
@@ -1094,11 +1302,11 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
         legendShape: legendShapeForFunc(),
         gradient: colormapGradients[key] ?? FALLBACK_GRADIENT,
         lut: colormapLuts[key],
-        // Display range isn't meaningful for the fixed-domain retinotopy/somatotopy maps — only
-        // colormap, legend, and clip are exposed for function overlays.
+        // Display range is hidden only for the fixed-domain cyclic retinotopy maps (polar/eccentricity);
+        // somatotopy (body position) is a normal 0–100 map, so it gets the generic display-range control.
         displayDomain: { min: funcChoice.mode.calMin, max: funcChoice.mode.calMax },
         displayRange: { min: funcCalMin, max: funcCalMax },
-        showDisplayRange: false,
+        showDisplayRange: funcChoice.kind !== 'retinotopy',
         clip: 'range',
         clipDomain: { min: funcChoice.mode.calMin, max: funcChoice.mode.calMax },
         clipValue: { lo: funcClipLo, hi: funcClipHi },
@@ -1118,7 +1326,6 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
         lut: colormapLuts[key],
         displayDomain: MORPH_DOMAIN[metric],
         displayRange: morphRanges[metric],
-        displaySymmetric: morphSymmetric[metric],
         clip: 'range',
         clipDomain: MORPH_DOMAIN[metric],
         clipValue: morphClip[metric],
@@ -1131,17 +1338,23 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
         title: `atlas · ${lastAtlasSel.name}`,
         colormap: key,
         legendShape: 'bar',
+        // Categorical atlas has no meaningful colormap (colors come from the per-ROI label table, and
+        // the picker shows "none"); a continuous legend bar over label ids is misleading, so hide it.
+        // Continuous atlas: the gradient bar IS the legend, so keep it.
+        showLegend: continuous,
         gradient: colormapGradients[key] ?? FALLBACK_GRADIENT,
         lut: colormapLuts[key],
-        // Continuous: a real value domain with a draggable upper bound (lower pinned). Categorical:
-        // no meaningful range — hide the slider (the map spreads across label ids).
-        displayDomain: continuous ? atlasDomain : { min: 0, max: 1 },
-        displayRange: continuous ? { min: atlasDomain.min, max: atlasDisplayMax } : { min: 0, max: 1 },
+        // Range + clip belong to a CONTINUOUS colormap only. In labels mode (colormap "none") the
+        // display window is inert (colors come from the label table) and a clip-by-id duplicates the
+        // ROI list's per-ROI toggles — so hide both; they reappear when a real colormap is picked.
+        displayDomain: atlasDomain,
+        displayRange: { min: atlasDisplayMin, max: atlasDisplayMax },
         showDisplayRange: continuous,
-        lockMin: continuous,
-        // A continuous gradient has no categorical mode, so don't offer "labels" in the picker.
+        // A continuous gradient has no categorical mode, so don't offer "none" in the picker.
         colormaps: atlasContinuous ? colormapInfos.filter((i) => i.key !== LABELS_KEY) : colormapInfos,
-        clip: 'none',
+        clip: continuous ? 'range' : 'none',
+        clipDomain: atlasDomain,
+        clipValue: { lo: atlasClipLo, hi: atlasClipHi },
         // Categorical: the ROI list already shows the real palette, so start the section collapsed.
         // Continuous: the bar + range ARE the legend, so keep it open.
         collapsed: !continuous,
@@ -1160,8 +1373,7 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
       if (key === LABELS_KEY && t !== 'atlas') return // "Labels" only means anything for the atlas
       if (t === 'function') {
         funcColormap = key
-        applyFunctionNow()
-        void applyFunctionSurface()
+        applyFunctionColor()
       } else if (t === 'morphology') {
         morphColormaps[morphActiveMetric()] = key
         view?.applyMorphologyDisplay(morphDisplay())
@@ -1178,19 +1390,18 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
       if (t === 'function') {
         funcCalMin = min
         funcCalMax = max
-        applyFunctionNow()
-        void applyFunctionSurface() // range recolors the surface too
+        applyFunctionColor() // range recolors both slices and surface
       } else if (t === 'morphology') {
         morphRanges[morphActiveMetric()] = { min, max }
         view?.applyMorphologyDisplay(morphDisplay())
         refreshColorDisplay()
-      } else if (t === 'atlas' && atlasColormap) {
-        atlasDisplayMax = max // lower bound is pinned (lockMin); only the upper drives contrast
-        applyAtlasColormap() // re-quantize the volume + surface over the new window (no full refresh mid-drag)
+      } else if (t === 'atlas') {
+        atlasDisplayMin = min
+        atlasDisplayMax = max
+        // Continuous: re-quantize the volume + surface over the new window (no full refresh mid-drag).
+        // Categorical: the window is inert (colors come from the label table), so nothing to re-apply.
+        if (atlasColormap) applyAtlasColormap()
       }
-    },
-    onDisplaySymmetric: (on: boolean): void => {
-      if (colorTarget() === 'morphology') morphSymmetric[morphActiveMetric()] = on
     },
     onDisplayAuto: (): void => {
       const t = colorTarget()
@@ -1210,12 +1421,17 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
       if (t === 'function') {
         funcClipLo = lo
         funcClipHi = hi
-        applyFunctionNow()
-        void applyFunctionSurface() // clip hides the same vertices on the surface
+        applyFunctionColor() // clip hides the same vertices on both slices and surface
       } else if (t === 'morphology') {
         morphClip[morphActiveMetric()] = { lo, hi }
         view?.applyMorphologyDisplay(morphDisplay())
         refreshColorDisplay()
+      } else if (t === 'atlas') {
+        atlasClipLo = lo
+        atlasClipHi = hi
+        // Continuous: mask voxels outside [lo, hi]. Categorical: hide ROIs whose id is outside
+        // [lo, hi] by folding them into the colortable's hidden set (see applyAtlasColormap).
+        applyAtlasColormap()
       }
     },
     onReset: (): void => {
@@ -1226,13 +1442,11 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
         funcCalMax = funcChoice.mode.calMax
         funcClipLo = null
         funcClipHi = null
-        applyFunctionNow()
-        void applyFunctionSurface()
+        applyFunctionColor()
       } else if (t === 'morphology') {
         const m = morphActiveMetric()
         morphColormaps[m] = MORPH_DEFAULT_COLORMAP[m]
         morphRanges[m] = { ...MORPH_DEFAULT_RANGE[m] }
-        morphSymmetric[m] = MORPH_DEFAULT_SYMMETRIC[m]
         morphClip[m] = { lo: null, hi: null }
         view?.applyMorphologyDisplay(morphDisplay())
         refreshColorDisplay()
@@ -1240,7 +1454,10 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
         // Continuous atlas resets to the default colormap + full data range; a parcellation resets
         // to its categorical labels.
         atlasColormap = atlasContinuous ? CONTINUOUS_DEFAULT : null
+        atlasDisplayMin = atlasDomain.min
         atlasDisplayMax = atlasDomain.max
+        atlasClipLo = null
+        atlasClipHi = null
         applyAtlasColormap()
         refreshColorDisplay()
       }
@@ -1492,7 +1709,6 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
       ranges: Record<MorphologyMetric, { min: number; max: number }>
       colormaps: Partial<Record<MorphologyMetric, string>>
       clip: Record<MorphologyMetric, { lo: number | null; hi: number | null }>
-      symmetric: Record<MorphologyMetric, boolean>
     }
   }
 
@@ -1505,7 +1721,6 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
       morphRanges[k] = m ? { ...m.ranges[k] } : { ...MORPH_DEFAULT_RANGE[k] }
       morphColormaps[k] = m ? (m.colormaps[k] ?? MORPH_DEFAULT_COLORMAP[k]) : MORPH_DEFAULT_COLORMAP[k]
       morphClip[k] = m ? { ...m.clip[k] } : { lo: null, hi: null }
-      morphSymmetric[k] = m ? m.symmetric[k] : MORPH_DEFAULT_SYMMETRIC[k]
     }
     let metric: MorphologyDisplayMetric = m?.metric ?? 'curvature'
     if (metric !== 'none' && !mf.morphology?.shape?.[metric]) metric = mf.morphology?.shape?.curvature ? 'curvature' : 'none'
@@ -1539,12 +1754,9 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
               ranges: { curvature: { ...morphRanges.curvature }, sulc: { ...morphRanges.sulc }, thickness: { ...morphRanges.thickness } },
               colormaps: { ...morphColormaps },
               clip: { curvature: { ...morphClip.curvature }, sulc: { ...morphClip.sulc }, thickness: { ...morphClip.thickness } },
-              symmetric: { ...morphSymmetric },
             },
           }
         : null
-    // Re-fit the surface zoom only on the first load; a switch restores the prior camera instead (Req 11).
-    if (!snap) surfaceScaled = false
     try {
       manifest = (await files.getManifest(sourceId, subjectId)) as unknown as Manifest
       store.update({ sourceId, subjectId })
@@ -1585,11 +1797,13 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
         paneObserver.observe(surfacePane)
         // Colormap registry + assets are subject-independent — build once from every map NiiVue
         // offers (brainana maps + built-ins), then mount the shared color-display section. The
-        // synthetic "Labels" entry (categorical restore) is only meaningful for the atlas target.
+        // synthetic entry (categorical restore) is only meaningful for the atlas target. It is
+        // labelled "none" — a categorical atlas has no continuous colormap; its colors come from the
+        // per-ROI label table (the ROI list above), so the picker reads "none" with a neutral swatch.
         const built = buildColormapRegistry(availableColormaps(view.slices))
-        colormapInfos = [{ key: LABELS_KEY, label: 'labels (categorical)', group: 'Brainana' }, ...built]
+        colormapInfos = [{ key: LABELS_KEY, label: 'none', group: 'Brainana' }, ...built]
         const assets = buildColormapAssets(view.slices, built.map((c) => c.key))
-        colormapGradients = { ...assets.gradients, [LABELS_KEY]: 'repeating-linear-gradient(90deg, #c0563a 0 12%, #d8a24c 12% 24%, #8bbf6e 24% 36%, #4aa0c0 36% 48%, #8f6ed0 48% 60%)' }
+        colormapGradients = { ...assets.gradients, [LABELS_KEY]: 'linear-gradient(90deg, #6b6b6b, #6b6b6b)' }
         colormapLuts = assets.luts
         colorDisplay = createColorDisplay(colorDisplayCallbacks, colormapGradients, colormapInfos)
         colorDock.append(colorDisplay.element)
@@ -1620,10 +1834,14 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
 
       const baseVol = manifest.volumes[volIdx]
       if (baseVol) await view.setBaseVolume(baseVol.url, 1)
+      syncVolumeControls() // seed the underlay rail (window/clip/zoom) from the loaded volume
       // Reference surface for node lookup (pial in world space; fall back to white).
       await view.setReference(manifest.surfaces.pial ?? manifest.surfaces.white)
       if (surfDefault) await applySurface(surfDefault)
-      setActiveLayout(store.get('layout'))
+      setActiveLayout(store.get('layout')) // sizes the surface pane before we auto-fit
+      // Fresh load: frame the mesh to this pane. A snapshot restore instead reapplies the saved
+      // camera further below, so it wins over the fit (Req 11).
+      if (!snap && surfDefault) view.fitSurface()
 
       // (re)build the atlas panel for this subject, restoring the prior opacity onto the slider.
       atlasPanel?.element.remove()
@@ -1675,8 +1893,7 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
           },
           onThreshold: (v) => {
             funcThreshold = v
-            applyFunctionNow()
-            void applyFunctionSurface() // re-mask the surface at the new threshold
+            applyFunctionColor() // re-mask both slices and surface at the new threshold
             updateFunctionReport()
             updateVisualField()
           },
@@ -1818,13 +2035,22 @@ export function mountDashboard(root: HTMLElement, deps: Deps): void {
       if (!view || !currentNode || !paneState().surf) return false
       const world = view.nodeWorld(currentNode)
       if (!world) return false
-      const sp = view.projectToScreen(world, surfaceCanvas)
+      // The pin is DRAWN lifted outward along the surface normal (Marker.setWorld); grab-test that
+      // same lifted centre, not the bare vertex, so the hit region tracks where the pin actually is.
+      const normal = view.nodeWorldNormal(currentNode)
+      const lift = marker?.liftAmount() ?? 0
+      const target: [number, number, number] =
+        normal && lift ? [world[0] + normal[0] * lift, world[1] + normal[1] * lift, world[2] + normal[2] * lift] : world
+      const sp = view.projectToScreen(target, surfaceCanvas)
       if (!sp || !(sp.w > 0)) return false
       return Math.hypot(sp.x - clientX, sp.y - clientY) <= HIT_PX
     }
     const applyPick = (x: number, y: number): void => {
       if (!view) return
-      const node = view.pickNodeAtScreen(x, y, surfaceCanvas)
+      // Constrain the drag to walk along mesh neighbours from the current vertex so it can't jump
+      // across a thin cortical ribbon to the far wall. Fall back to the global pick only when there
+      // is no current node yet (or no adjacency for its hemisphere).
+      const node = (currentNode && view.walkNode(currentNode, x, y, surfaceCanvas)) || view.pickNodeAtScreen(x, y, surfaceCanvas)
       if (!node) return
       const refWorld = view.refNodeWorld(node)
       if (refWorld) {

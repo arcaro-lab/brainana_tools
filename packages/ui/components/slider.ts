@@ -12,6 +12,10 @@ export interface SliderOptions {
   onInput: (v: number) => void
   /** Optional formatter for the label suffix (e.g. "F ≥ 1.20"); shown after the label text. */
   suffix?: (v: number) => string
+  /** Optional formatter for the editable number box read-out (e.g. fixed 4 decimals). Default: String. */
+  format?: (v: number) => string
+  /** Drop the editable number box, keeping only the slider (e.g. tight toolbar slots). */
+  hideBox?: boolean
   disabled?: boolean
 }
 
@@ -33,10 +37,11 @@ export function createSlider(opts: SliderOptions): Slider {
   const box = h('input', { type: 'number', class: 'slider-num', min: String(min), max: String(max), step: String(step), value: String(opts.value) }) as HTMLInputElement
   const suffixEl = opts.suffix ? h('span', { class: 'muted slider-suffix' }, [opts.suffix(opts.value)]) : null
   const labelEl = h('span', { class: 'slider-label' }, suffixEl ? [`${opts.label} `, suffixEl] : [opts.label])
+  const fmtBox = opts.format ?? String // number-box read-out formatter; range input stays raw-numeric
 
   const sync = (v: number, source: 'range' | 'box' | 'both'): void => {
     if (source !== 'range') range.value = String(v)
-    if (source !== 'box') box.value = String(v)
+    if (source !== 'box') box.value = fmtBox(v)
     if (suffixEl && opts.suffix) suffixEl.textContent = opts.suffix(v)
   }
   range.addEventListener('input', () => {
@@ -52,12 +57,15 @@ export function createSlider(opts: SliderOptions): Slider {
     }
     const v = clamp(Number(box.value), min, max)
     sync(v, 'box')
-    box.value = String(v)
+    box.value = fmtBox(v)
     opts.onInput(v)
   }
   box.addEventListener('change', commitBox)
 
-  const element = h('label', { class: 'field slider-field' }, [labelEl, h('div', { class: 'slider-row' }, [range, box])])
+  // The box stays wired for value sync; when hidden it's simply not placed in the DOM (its change
+  // listener then never fires), so value()/setValue() keep working unchanged.
+  const rowKids = opts.hideBox ? [range] : [range, box]
+  const element = h('label', { class: 'field slider-field' }, [labelEl, h('div', { class: 'slider-row' }, rowKids)])
   if (opts.disabled) {
     range.disabled = true
     box.disabled = true

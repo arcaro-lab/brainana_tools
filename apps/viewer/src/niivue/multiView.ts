@@ -5,10 +5,14 @@ import { Niivue, NVImage, NVMesh, SLICE_TYPE, MULTIPLANAR_TYPE, SHOW_RENDER, NVM
 import type { RuntimeClient } from '@brainana/core-client/runtimeClient.ts'
 import type { Layout } from '../state/store.ts'
 import { registerColormaps } from './colormaps.ts'
-import { mapFunctionalDisplay, surfaceLutFromColormap, quantizeScalarToBins } from '../data/functional.ts'
+import { mapFunctionalDisplay, surfaceLutFromColormap, quantizeScalarToBins, maskSurfaceBinsByValue } from '../data/functional.ts'
 
-// Per-surface render zoom so different geometries fill the pane consistently (v1.2.25 f_).
-const SURFACE_SCALE: Record<string, number> = { pial: 2.15, white: 2.15, smoothwm: 2.15, inflated: 1.45, veryinflated: 1.35, sphere: 1.25 }
+// Surface auto-fit: instead of hand-tuned per-surface/per-view zoom constants, we measure the
+// mesh's projected on-screen bounds and rescale volScaleMultiplier so it fills a consistent
+// fraction of the pane — independent of monitor/window shape (see #fitSurfaceToView).
+const SURFACE_FIT_FRACTION = 0.9 // mesh fills 90% of the binding (limiting) pane dimension
+const SURFACE_SCALE_MIN = 0.25 // clamp so a hidden/degenerate pane can't produce absurd zoom
+const SURFACE_SCALE_MAX = 12
 
 // NIfTI codes used to flip an atlas volume into NiiVue's discrete label shader (see #setAtlasVolumeImage).
 const NII_DT_UINT8 = 2 // datatypeCode for 8-bit unsigned integer voxels (continuous-atlas bins)
@@ -41,6 +45,11 @@ export type MorphologyMetric = 'curvature' | 'sulc' | 'thickness'
 export type MorphologyDisplayMetric = MorphologyMetric | 'none'
 export type CurvatureStyle = 'binary' | 'continuous'
 
+// The single source of truth for per-metric default morphology colormaps (continuous shading).
+// Imported by the dashboard for its state init + reset; used here as the layer fallback. Binary
+// curvature always keeps its dedicated 2-tone LUT (brainana_curvature) and is not overridable.
+export const MORPH_DEFAULT_COLORMAP: Record<MorphologyMetric, string> = { curvature: 'gray', sulc: 'blue2red', thickness: 'viridis' }
+
 // The three per-hemisphere morphology shading sources (.shape.gii pairs). Any may be absent.
 export interface MorphologyShapePairs {
   curvature?: SurfacePairUrls
@@ -68,6 +77,17 @@ export interface SurfaceNode {
   index: number
 }
 
+// Per-hemisphere vertex adjacency in CSR (compressed sparse row) form, built once per subject from
+// the reference mesh triangles. Vertex v's neighbours are neighbors[offsets[v] .. offsets[v + 1]].
+// `visited` is generation-stamped scratch for the drag walk (see walkNode) so no per-frame clearing
+// is needed. Topology is shared across pial/white/inflated/sphere by the same index convention that
+// nearestNode relies on, so one graph is valid for every displayed surface.
+interface VertexAdjacency {
+  offsets: Uint32Array
+  neighbors: Uint32Array
+  visited: Int32Array
+}
+
 function niivue(): Niivue {
   return new Niivue({ backColor: [0, 0, 0, 1], show3Dcrosshair: false, isColorbar: false, dragAndDropEnabled: false })
 }
@@ -77,6 +97,15 @@ export class MultiView {
   readonly render: Niivue
   #client: RuntimeClient
   #baseVol: NVImage | null = null
+  // Pristine copy of the base volume's raw voxels, captured lazily the first time a clip is applied.
+  // Clip masking mutates #baseVol.img in place (sentinel-below-cal_min → transparent index-0), so the
+  // original must be preserved to rebuild the image on every clip/window change and to restore it when
+  // the clip is cleared. Reset to null on each base-volume load so the cache re-captures per volume.
+  #baseOrig: Float32Array | null = null
+  // Clip bounds the current #baseVol.img mask was built for. The mask depends ONLY on these bounds (+
+  // the pristine voxels), never on the display window, so a pure cal_min/cal_max change can skip the
+  // O(voxels) re-mask loop. undefined = no mask currently applied. Reset on each base-volume load.
+  #baseClip: { lo: number | null; hi: number | null } | undefined = undefined
   #atlasVol: NVImage | null = null
   // Discrete-label-shader state for the atlas volume. NiiVue's generic float shader can't cleanly
   // hide background (voxel 0) for label maps with >64 ids (an internal 2/256 "opaque floor" bleeds
@@ -92,6 +121,8 @@ export class MultiView {
   #atlasValueRange: { min: number; max: number } = { min: 0, max: 1 }
   #displayMeshes: NVMesh[] = [] // [left, right] currently displayed surface (render instance)
   #refMeshes: NVMesh[] = [] // [left, right] reference surface in WORLD space (not displayed)
+  #adjacency: (VertexAdjacency | null)[] = [] // [left, right] vertex neighbours for the drag walk
+  #walkGen = 0 // increments per walkNode call to stamp the BFS visited scratch without clearing it
   #crosshairCb: ((info: CrosshairInfo) => void) | null = null
   #syncing = false
 
@@ -174,10 +205,107 @@ export class MultiView {
     this.slices.addVolume(img)
     this.slices.setVolume(img, 0)
     this.#baseVol = img
+    this.#baseOrig = null // drop the previous volume's clip cache; re-captured on first clip
+    this.#baseClip = undefined // no mask applied to the freshly loaded voxels
   }
 
   setVolumeOpacity(opacity: number): void {
     if (this.#baseVol) this.slices.setOpacity(this.slices.getVolumeIndexByID(this.#baseVol.id), opacity)
+  }
+
+  // ---- underlay (base volume) display controls: intensity window + clip mask + montage zoom ----
+
+  // The base volume's calibrated intensity extents (scaled units — the same space as cal_min/cal_max),
+  // used to seed the display window (robust) and bound the sliders/boxes (global). null = no volume.
+  baseVolumeRange(): { globalMin: number; globalMax: number; robustMin: number; robustMax: number } | null {
+    const v = this.#baseVol as unknown as { global_min?: number; global_max?: number; robust_min?: number; robust_max?: number } | null
+    if (!v || v.global_min == null || v.global_max == null) return null
+    return {
+      globalMin: v.global_min,
+      globalMax: v.global_max,
+      // robust_min/max are the percentile window NiiVue auto-picks; fall back to global if absent.
+      robustMin: v.robust_min ?? v.global_min,
+      robustMax: v.robust_max ?? v.global_max,
+    }
+  }
+
+  // Apply the underlay intensity window [calLo, calHi] (colormap clamp) plus an optional value clip:
+  // voxels whose scaled value falls outside [clipLo, clipHi] are masked to the volume's global minimum
+  // so they clamp to the bottom (black) of the gray LUT (hidden against the black background). null
+  // bound = open on that side. When the clip is fully open the pristine voxels are restored (no
+  // per-voxel loop). NOTE: the mask value must stay within the volume's real [global_min, global_max]
+  // range — a value far below (e.g. cal_min-1000) overflows the normalized GPU texture and wraps to
+  // the TOP of the colormap (white) instead of clamping to black.
+  setVolumeWindow(calLo: number, calHi: number, clipLo: number | null, clipHi: number | null): void {
+    const vol = this.#baseVol as unknown as (NVImage & { img?: Float32Array; hdr?: { scl_slope?: number; scl_inter?: number }; global_min?: number }) | null
+    if (!vol?.img) return
+    vol.cal_min = calLo
+    vol.cal_max = calHi
+    const slope = vol.hdr?.scl_slope || 1
+    const inter = vol.hdr?.scl_inter ?? 0
+    const img = vol.img
+    const clipping = clipLo !== null || clipHi !== null
+    if (clipping) {
+      // The mask is a pure function of (clip bounds, pristine voxels) — independent of the display
+      // window — so a window-only change (brightness/contrast drag) whose clip bounds are unchanged
+      // reuses the already-masked img and only re-uploads for the new cal_min/cal_max below. Skipping
+      // the per-voxel loop here is the difference between an O(voxels) pass and none on every drag frame.
+      const clipChanged = !this.#baseClip || this.#baseClip.lo !== clipLo || this.#baseClip.hi !== clipHi
+      if (clipChanged) {
+        if (!this.#baseOrig) this.#baseOrig = Float32Array.from(img) // capture pristine raw voxels once
+        const orig = this.#baseOrig
+        // Mask to the darkest in-range value (global_min → colormap bottom = black), NOT a far-below
+        // sentinel: staying in range avoids the texture-normalization overflow that renders as white.
+        const floorScaled = vol.global_min ?? calLo
+        const rawFloor = (floorScaled - inter) / slope
+        for (let i = 0; i < img.length; i++) {
+          const val = orig[i] * slope + inter // scaled value (clip bounds are in scaled units)
+          const pass = Number.isFinite(val) && (clipLo === null || val >= clipLo) && (clipHi === null || val <= clipHi)
+          img[i] = pass ? orig[i] : rawFloor
+        }
+        this.#baseClip = { lo: clipLo, hi: clipHi }
+      }
+    } else {
+      if (this.#baseOrig) {
+        img.set(this.#baseOrig) // clip cleared — restore pristine voxels
+        this.#baseOrig = null
+      }
+      this.#baseClip = undefined
+    }
+    this.slices.updateGLVolume()
+  }
+
+  // Zoom the slice montage (multiplanar) only; the surface pane owns its own camera zoom. 2D zoom
+  // lives in scene.pan2Dxyzmm[3] (volScaleMultiplier only affects the 3D render). Anchor the zoom on
+  // the crosshair — the standard neuroimaging-viewer behaviour, matching NiiVue's own scroll-zoom:
+  // shift the pan by (oldZoom - newZoom) × crosshair-mm so the crosshair stays fixed on screen
+  // instead of the view zooming about the volume centre and pushing the crosshair out of view.
+  setVolumeZoom(scale: number): void {
+    const nv = this.slices as unknown as {
+      scene: { pan2Dxyzmm: number[]; crosshairPos: number[] }
+      frac2mm?: (frac: number[]) => ArrayLike<number>
+      setPan2Dxyzmm?: (v: number[]) => void
+    }
+    const cur = nv.scene.pan2Dxyzmm
+    const dz = (cur[3] || 1) - scale
+    const mm = nv.frac2mm ? nv.frac2mm(nv.scene.crosshairPos) : [0, 0, 0]
+    const next = [cur[0] + dz * mm[0], cur[1] + dz * mm[1], cur[2] + dz * mm[2], scale]
+    if (nv.setPan2Dxyzmm) nv.setPan2Dxyzmm(next)
+    else {
+      nv.scene.pan2Dxyzmm = next
+      this.slices.drawScene()
+    }
+  }
+
+  // Reset the montage pan+zoom to the neutral centred view (pan2Dxyzmm default is [0,0,0,1]).
+  resetVolumeZoom(): void {
+    const nv = this.slices as unknown as { scene: { pan2Dxyzmm: number[] }; setPan2Dxyzmm?: (v: number[]) => void }
+    const next = [0, 0, 0, 1]
+    if (nv.setPan2Dxyzmm) nv.setPan2Dxyzmm(next)
+    else {
+      nv.scene.pan2Dxyzmm = next
+      this.slices.drawScene()
+    }
   }
 
   // ---- atlas volume overlay (colored label map on the slices) ----
@@ -294,11 +422,14 @@ export class MultiView {
   // discrete label shader (bin 0 discarded). The SAME quantization + LUT feed the surface
   // (setAtlasSurfaceContinuous), so the slices and the 3D mesh stay pixel-consistent. Works for any
   // atlas (bins are non-negative). A colormap-only change rebuilds the LUT; a range change re-bins.
-  setAtlasContinuous(cmapLut: ArrayLike<number>, range: { min: number; max: number }): void {
+  setAtlasContinuous(cmapLut: ArrayLike<number>, range: { min: number; max: number }, clip?: { lo: number | null; hi: number | null }): void {
     if (!this.#atlasVol || !this.#atlasFloat) return
-    const bins = Uint8Array.from(quantizeScalarToBins(this.#atlasFloat.img, range.min, range.max))
+    let quant = quantizeScalarToBins(this.#atlasFloat.img, range.min, range.max)
+    // Value clip: drop voxels outside [lo, hi] to the transparent background bin (0).
+    if (clip && (clip.lo !== null || clip.hi !== null)) quant = maskSurfaceBinsByValue(quant, this.#atlasFloat.img, clip.lo, clip.hi)
+    const bins = Uint8Array.from(quant)
     this.#setAtlasVolumeImage(bins, NII_DT_UINT8, 8, NII_INTENT_LABEL)
-    this.#atlasVol.setColormapLabel(MultiView.#lutToColortable(surfaceLutFromColormap(cmapLut).lut))
+    this.#atlasVol.setColormapLabel(MultiView.#surfaceColortableFromColormap(cmapLut))
     this.slices.updateGLVolume()
   }
 
@@ -522,11 +653,54 @@ export class MultiView {
   // crosshair to a vertex index. Not added to the render scene (won't affect framing).
   async setReference(pair: SurfacePairUrls | null): Promise<void> {
     this.#refMeshes = []
+    this.#adjacency = []
     if (!pair) return
     const gl = (this.render as unknown as { gl: WebGL2RenderingContext }).gl
     const left = await NVMesh.loadFromUrl({ url: this.#client.dataUrl(pair.left), gl })
     const right = await NVMesh.loadFromUrl({ url: this.#client.dataUrl(pair.right), gl })
     this.#refMeshes = [left, right]
+    // Vertex adjacency for the constrained drag walk. Built once per subject from the reference
+    // triangles; shared topology means it stays valid across every display-surface swap.
+    this.#adjacency = [this.#buildAdjacency(left), this.#buildAdjacency(right)]
+  }
+
+  // Build a CSR vertex-adjacency graph from a mesh's triangle list. One pass counts each vertex's
+  // (over-counted) degree, a prefix sum lays out the offsets, and a second pass fills both directions
+  // of every triangle edge. Duplicate directed edges from shared triangles are harmless — the walk's
+  // generation-stamped visited array dedups traversal. Returns null if the mesh has no usable tris.
+  #buildAdjacency(mesh: NVMesh | undefined): VertexAdjacency | null {
+    const tris = (mesh as unknown as { tris?: Uint32Array } | undefined)?.tris
+    const pts = mesh?.pts
+    if (!tris || tris.length < 3 || !pts) return null
+    const nVerts = pts.length / 3
+    const degree = new Uint32Array(nVerts)
+    for (let t = 0; t < tris.length; t += 3) {
+      const a = tris[t]
+      const b = tris[t + 1]
+      const c = tris[t + 2]
+      degree[a] += 2
+      degree[b] += 2
+      degree[c] += 2
+    }
+    const offsets = new Uint32Array(nVerts + 1)
+    for (let v = 0; v < nVerts; v++) offsets[v + 1] = offsets[v] + degree[v]
+    const neighbors = new Uint32Array(offsets[nVerts])
+    const cursor = offsets.slice(0, nVerts) // running write position per vertex
+    const addEdge = (from: number, to: number): void => {
+      neighbors[cursor[from]++] = to
+    }
+    for (let t = 0; t < tris.length; t += 3) {
+      const a = tris[t]
+      const b = tris[t + 1]
+      const c = tris[t + 2]
+      addEdge(a, b)
+      addEdge(a, c)
+      addEdge(b, a)
+      addEdge(b, c)
+      addEdge(c, a)
+      addEdge(c, b)
+    }
+    return { offsets, neighbors, visited: new Int32Array(nVerts) }
   }
 
   #atlasLayerIndex = -1
@@ -555,7 +729,9 @@ export class MultiView {
     for (const mesh of this.#displayMeshes) {
       const layer = (mesh as unknown as { layers?: Array<{ global_max?: number }> }).layers?.[index]
       if (layer) layer.global_max = Math.max(layer.global_max ?? 0, maxId)
-      await (mesh as unknown as { setLayerProperty: (i: number, k: string, v: unknown, gl: WebGL2RenderingContext) => Promise<void> }).setLayerProperty(index, 'colormapLabel', table, gl).catch(() => {})
+      // Surface a failed LUT attach instead of swallowing it: if this no-ops the layer keeps its
+      // gray/default colormap (bin 0 = opaque black), which blacks out or miscolors the overlay.
+      await (mesh as unknown as { setLayerProperty: (i: number, k: string, v: unknown, gl: WebGL2RenderingContext) => Promise<void> }).setLayerProperty(index, 'colormapLabel', table, gl).catch((err) => console.warn('surface colormapLabel attach failed', err))
     }
   }
 
@@ -576,20 +752,20 @@ export class MultiView {
   #morphDisplay: MorphologyDisplay | null = null
   #morphIndex: Partial<Record<string, number>> = {} // layer key -> layer index (same on both hemis)
 
-  // Default colormap per continuous morphology layer; overridable via display.colormaps.
-  // Binary curvature always keeps its dedicated 2-tone LUT (not overridable).
-  #morphColormap(metric: MorphologyMetric, fallback: string): string {
-    return this.#morphDisplay?.colormaps?.[metric] ?? fallback
+  // Active colormap for a continuous morphology layer: the display override, else the shared
+  // per-metric default. Binary curvature always keeps its dedicated 2-tone LUT (not overridable).
+  #morphColormap(metric: MorphologyMetric): string {
+    return this.#morphDisplay?.colormaps?.[metric] ?? MORPH_DEFAULT_COLORMAP[metric]
   }
 
   #morphSpecs(): Array<{ key: string; metric: MorphologyMetric; pair: SurfacePairUrls; colormap: string }> {
     const specs: Array<{ key: string; metric: MorphologyMetric; pair: SurfacePairUrls; colormap: string }> = []
     if (this.#morphPairs.curvature) {
       specs.push({ key: 'curvatureBinary', metric: 'curvature', pair: this.#morphPairs.curvature, colormap: 'brainana_curvature' })
-      specs.push({ key: 'curvatureContinuous', metric: 'curvature', pair: this.#morphPairs.curvature, colormap: this.#morphColormap('curvature', 'gray') })
+      specs.push({ key: 'curvatureContinuous', metric: 'curvature', pair: this.#morphPairs.curvature, colormap: this.#morphColormap('curvature') })
     }
-    if (this.#morphPairs.sulc) specs.push({ key: 'sulc', metric: 'sulc', pair: this.#morphPairs.sulc, colormap: this.#morphColormap('sulc', 'blue2red') })
-    if (this.#morphPairs.thickness) specs.push({ key: 'thickness', metric: 'thickness', pair: this.#morphPairs.thickness, colormap: this.#morphColormap('thickness', 'viridis') })
+    if (this.#morphPairs.sulc) specs.push({ key: 'sulc', metric: 'sulc', pair: this.#morphPairs.sulc, colormap: this.#morphColormap('sulc') })
+    if (this.#morphPairs.thickness) specs.push({ key: 'thickness', metric: 'thickness', pair: this.#morphPairs.thickness, colormap: this.#morphColormap('thickness') })
     return specs
   }
 
@@ -765,8 +941,8 @@ export class MultiView {
   // over [range] into bins 1..255 (value 0 / non-finite → bin 0, transparent) and apply the same
   // 256-entry ramp LUT the volume uses (setAtlasContinuous). Mirrors setFunctionSurface; reuses the
   // already-loaded layer on colormap/range changes (no reload).
-  async setAtlasSurfaceContinuous(pair: SurfacePairUrls, cmapLut: ArrayLike<number>, range: { min: number; max: number }, opacity: number): Promise<void> {
-    const table = MultiView.#lutToColortable(surfaceLutFromColormap(cmapLut).lut)
+  async setAtlasSurfaceContinuous(pair: SurfacePairUrls, cmapLut: ArrayLike<number>, range: { min: number; max: number }, opacity: number, clip?: { lo: number | null; hi: number | null }): Promise<void> {
+    const table = MultiView.#surfaceColortableFromColormap(cmapLut)
     const ok = await this.#ensureAtlasSurfaceLayer(pair, table)
     if (!ok || this.#atlasLayerIndex < 0) return
     const gl = (this.render as unknown as { gl: WebGL2RenderingContext }).gl
@@ -775,7 +951,11 @@ export class MultiView {
       const m = mesh as unknown as { layers?: Array<Record<string, unknown>>; updateMesh?: (gl: WebGL2RenderingContext) => void }
       const layer = m.layers?.[this.#atlasLayerIndex]
       if (!layer) continue
-      layer.values = quantizeScalarToBins(this.#atlasSurfaceRaw[h] ?? new Float32Array(0), range.min, range.max)
+      const raw = this.#atlasSurfaceRaw[h] ?? new Float32Array(0)
+      let vals = quantizeScalarToBins(raw, range.min, range.max)
+      // Value clip: drop vertices outside [lo, hi] to the transparent background bin (0).
+      if (clip && (clip.lo !== null || clip.hi !== null)) vals = maskSurfaceBinsByValue(vals, raw, clip.lo, clip.hi)
+      layer.values = vals
       layer.nFrame4D = 1
       layer.frame4D = 0
       layer.opacity = opacity
@@ -814,6 +994,14 @@ export class MultiView {
   static readonly #FUNC_LAYER_PREFIX = 'brainana-func:'
   #funcLayerIndex = -1
   #funcLayerKey: string | null = null
+
+  // Build the {R,G,B,A,I} surface colortable directly from a flat colormap RGBA LUT: sample it into
+  // the shared 256-entry categorical surface LUT (bin 0 transparent) then convert. The single bridge
+  // from "a continuous colormap" to "a mesh-layer colormapLabel", used by the func + atlas surfaces
+  // AND the atlas volume, so all three derive identical colors from the same colormap.
+  static #surfaceColortableFromColormap(cmapLut: ArrayLike<number>): LabelColortable {
+    return MultiView.#lutToColortable(surfaceLutFromColormap(cmapLut).lut)
+  }
 
   // Convert a dense 256-entry RGBA LUT into the {R,G,B,A,I} colortable the label path consumes.
   static #lutToColortable(lut: Uint8ClampedArray): LabelColortable {
@@ -902,21 +1090,60 @@ export class MultiView {
     this.render.drawScene()
   }
 
-  #baseScale = 2.0 // current surface's fit scale; view presets scale relative to this (Req 9)
-  setSurfaceScale(kind: string): void {
-    const scale = SURFACE_SCALE[kind] ?? 2.0
-    this.#baseScale = scale
+  #baseScale = 2.0 // last fitted surface zoom; kept for snapshot (getCamera/setCamera) shape compat
+
+  // Frame the displayed surface to fill the pane. The 3D projection is orthographic, so the mesh's
+  // projected pixel size is LINEAR in volScaleMultiplier: we project every visible vertex at the
+  // current zoom, measure the fraction of the pane the mesh's screen bounds fill, then rescale in a
+  // single pass to hit SURFACE_FIT_FRACTION. This is aspect-/monitor-independent (unlike a fixed
+  // constant) and adapts to the current view orientation, so no per-view zoom factor is needed.
+  #fitSurfaceToView(): void {
+    const canvas = (this.render as unknown as { gl?: { canvas?: HTMLCanvasElement } }).gl?.canvas
+    if (!canvas || canvas.width <= 0 || canvas.height <= 0) return
+    const visible = this.#displayMeshes.filter((m) => m && m.visible)
+    if (!visible.length) return
+    const m = this.#renderMvp(canvas)
+    if (!m) return
+    let minX = Infinity
+    let maxX = -Infinity
+    let minY = Infinity
+    let maxY = -Infinity
+    for (const mesh of visible) {
+      const pts = mesh.pts
+      for (let v = 0; v < pts.length; v += 3) {
+        const sp = this.#screenPoint([pts[v], pts[v + 1], pts[v + 2]], m.mvp, m.ltwh)
+        if (!sp || !(sp[3] > 0)) continue // behind the camera
+        if (sp[0] < minX) minX = sp[0]
+        if (sp[0] > maxX) maxX = sp[0]
+        if (sp[1] < minY) minY = sp[1]
+        if (sp[1] > maxY) maxY = sp[1]
+      }
+    }
+    const pw = maxX - minX // projected mesh bounds, device px
+    const ph = maxY - minY
+    if (!(pw > 0) || !(ph > 0)) return
+    const binding = Math.max(pw / canvas.width, ph / canvas.height) // fraction of limiting pane edge filled
+    if (!(binding > 0)) return
+    const cur = this.render.scene.volScaleMultiplier || 1
+    const next = Math.min(SURFACE_SCALE_MAX, Math.max(SURFACE_SCALE_MIN, (cur * SURFACE_FIT_FRACTION) / binding))
+    this.#baseScale = next
     try {
-      this.render.scene.volScaleMultiplier = scale
+      this.render.scene.volScaleMultiplier = next
       this.render.drawScene()
     } catch {
       // ignore
     }
   }
 
+  // Auto-frame the current surface to the current pane + view. Called on subject load and on each
+  // view preset (not on plain window resize — that only redraws).
+  fitSurface(): void {
+    this.#fitSurfaceToView()
+  }
+
   // Read/restore the surface camera (azimuth/elevation + zoom) so a monkey switch can keep the exact
-  // same view. `scale` is the live zoom (volScaleMultiplier); `baseScale` is the surface-fit scale
-  // that view presets multiply against (Req 9), preserved so presets still reframe correctly after.
+  // same view. `scale` is the live zoom (volScaleMultiplier); `baseScale` mirrors the last fitted
+  // zoom and is retained for snapshot backward-compat (restoring a saved camera wins over auto-fit).
   getCamera(): { azimuth: number; elevation: number; scale: number; baseScale: number } {
     const s = this.render.scene as unknown as { renderAzimuth?: number; renderElevation?: number; volScaleMultiplier?: number }
     return {
@@ -1047,8 +1274,16 @@ export class MultiView {
     return { x: rect.left + sp[0] / dpr, y: rect.top + sp[1] / dpr, depth: sp[2], w: sp[3] }
   }
 
-  // Pick the nearest FRONT-FACING displayed-surface vertex under a client (CSS-pixel) cursor.
+  // Pick the displayed-surface vertex NEAREST the cursor on the visible (front-facing) sheet.
   // Reuses NiiVue's own projection (calculateScreenPoint uses top-left device pixels).
+  //
+  // We can't just take the frontmost vertex within a hit radius: on a folded cortical surface that
+  // snaps to whichever gyral crown bulges most toward the camera, so the marker lands a few pixels
+  // off from the cursor. Instead we split each (roughly convex) hemisphere into a near and far sheet
+  // by projecting its centroid: a vertex is front-facing when it projects nearer the camera than the
+  // centroid. Among front-facing vertices we take the one closest to the cursor in screen space —
+  // that IS the point under the cursor. The centroid split reuses the convex-hemisphere assumption
+  // this class already relies on for nodeWorldNormal.
   pickNodeAtScreen(clientX: number, clientY: number, canvas: HTMLCanvasElement): SurfaceNode | null {
     if (this.#displayMeshes.length < 2) return null
     const m = this.#renderMvp(canvas)
@@ -1058,13 +1293,23 @@ export class MultiView {
     const px = (clientX - rect.left) * dpr
     const py = (clientY - rect.top) * dpr
     const R2 = (36 * dpr) * (36 * dpr)
+    // Only ever consider vertices WITHIN the hit radius (d2 < R2). Two candidates are tracked, both
+    // restricted to that radius so a drag never escapes to the far side of the surface:
+    //   best  — the front-facing vertex NEAREST the cursor (the point actually under the cursor)
+    //   front — the FRONTMOST (least-depth) vertex, always on the near sheet; used only when the
+    //           front-facing test finds nothing (e.g. grazing the silhouette, where surface vertices
+    //           sit right at the centroid depth). Never the nearest-of-any-depth — that could grab a
+    //           back-hemisphere vertex, throwing the crosshair into the interior and hiding the pin.
     let best: SurfaceNode | null = null
-    let bestDepth = Infinity
-    let fallback: SurfaceNode | null = null
-    let fallbackDist = Infinity
+    let bestDist = Infinity
+    let front: SurfaceNode | null = null
+    let frontDepth = Infinity
     for (let hemi = 0 as 0 | 1; hemi <= 1; hemi = (hemi + 1) as 0 | 1) {
       const mesh = this.#displayMeshes[hemi]
       if (!mesh || !mesh.visible) continue
+      // Depth of this hemisphere's centroid — the near/far divider for the convex sheet.
+      const cenSp = this.#screenPoint(this.#centroidOf(mesh), m.mvp, m.ltwh)
+      const cenDepth = cenSp ? cenSp[2] : Infinity
       const pts = mesh.pts
       for (let i = 0, v = 0; v < pts.length; i++, v += 3) {
         const sp = this.#screenPoint([pts[v], pts[v + 1], pts[v + 2]], m.mvp, m.ltwh)
@@ -1072,17 +1317,82 @@ export class MultiView {
         const dx = sp[0] - px
         const dy = sp[1] - py
         const d2 = dx * dx + dy * dy
-        if (d2 < R2 && sp[2] < bestDepth) {
-          bestDepth = sp[2]
+        if (d2 >= R2) continue // outside the hit radius — ignore entirely
+        if (sp[2] < cenDepth && d2 < bestDist) {
+          bestDist = d2
           best = { hemi, index: i }
         }
-        if (d2 < fallbackDist) {
-          fallbackDist = d2
-          fallback = { hemi, index: i }
+        if (sp[2] < frontDepth) {
+          frontDepth = sp[2]
+          front = { hemi, index: i }
         }
       }
     }
-    return best ?? (fallbackDist < R2 ? fallback : null)
+    // Nearest front-facing vertex under the cursor; else the frontmost vertex in range (still the near
+    // sheet); else null — an off-surface drag leaves the marker where it was rather than jumping off.
+    return best ?? front
+  }
+
+  // Constrained drag pick: from the marker's CURRENT vertex, walk along mesh edges to the vertex
+  // nearest the cursor, staying on the same connected hemisphere. The lateral and medial walls are
+  // edge-connected only the long way around the pole, so a bounded LOCAL walk can never cross the
+  // (thin) cortical ribbon to the far wall — eliminating the "jump" a global screen pick suffers.
+  // Returns null when the hemisphere has no adjacency, so the caller can fall back to pickNodeAtScreen.
+  walkNode(fromNode: SurfaceNode, clientX: number, clientY: number, canvas: HTMLCanvasElement): SurfaceNode | null {
+    const adj = this.#adjacency[fromNode.hemi]
+    const mesh = this.#displayMeshes[fromNode.hemi]
+    if (!adj || !mesh) return null
+    const m = this.#renderMvp(canvas)
+    if (!m) return null
+    const dpr = canvas.width / Math.max(1, canvas.clientWidth)
+    const rect = canvas.getBoundingClientRect()
+    const px = (clientX - rect.left) * dpr
+    const py = (clientY - rect.top) * dpr
+    const pts = mesh.pts
+    const { offsets, neighbors, visited } = adj
+    const gen = ++this.#walkGen // stamp; visited entries equal to gen were seen this call
+    // Screen-distance² from vertex i to the cursor (Infinity if the vertex is behind the camera).
+    const dist2 = (i: number): number => {
+      const v = i * 3
+      const sp = this.#screenPoint([pts[v], pts[v + 1], pts[v + 2]], m.mvp, m.ltwh)
+      if (!sp || !(sp[3] > 0)) return Infinity
+      const dx = sp[0] - px
+      const dy = sp[1] - py
+      return dx * dx + dy * dy
+    }
+    // Bounded BFS. The hop + visited caps keep the walk a small patch — far short of the hop count
+    // needed to wrap around the pole to the far wall — and ARRIVE2 stops early once we reach the
+    // cursor. `best` is seeded with the current vertex, so a drag that can't improve stays put.
+    const MAX_HOPS = 48
+    const MAX_VISITS = 8000
+    const ARRIVE2 = (4 * dpr) * (4 * dpr)
+    let best = fromNode.index
+    let bestD2 = dist2(fromNode.index)
+    visited[fromNode.index] = gen
+    let frontier: number[] = [fromNode.index]
+    let visits = 1
+    for (let hop = 0; hop < MAX_HOPS && frontier.length > 0 && visits < MAX_VISITS && bestD2 > ARRIVE2; hop++) {
+      const next: number[] = []
+      for (const u of frontier) {
+        const end = offsets[u + 1]
+        for (let e = offsets[u]; e < end; e++) {
+          const w = neighbors[e]
+          if (visited[w] === gen) continue
+          visited[w] = gen
+          visits++
+          const d2 = dist2(w)
+          if (d2 < bestD2) {
+            bestD2 = d2
+            best = w
+          }
+          next.push(w)
+          if (visits >= MAX_VISITS) break
+        }
+        if (visits >= MAX_VISITS) break
+      }
+      frontier = next
+    }
+    return { hemi: fromNode.hemi, index: best }
   }
 
   // Reference-surface (volume-space) position for a node — used to sync the slice crosshair when
@@ -1107,15 +1417,14 @@ export class MultiView {
   }
 
   // ---- camera view presets (surf row) ----
-  // Absolute NiiVue azimuth/elevation per named view, plus a per-view zoom so each reframes to
-  // best-fit (Req 9). Lateral/Medial are hemisphere-aware (Req 8: the left hemisphere's lateral
-  // face is toward RIGHT_SIDE azimuth, its medial face toward LEFT_SIDE — the mirror of before).
-  // NOTE: the angle + scale constants are the most likely things to need a visual tweak.
+  // Absolute NiiVue azimuth/elevation per named view; the zoom is then auto-fit to the mesh bounds
+  // (#fitSurfaceToView), so each view reframes to best-fit without per-view zoom constants — this
+  // handles the elongated dorsal/ventral profiles automatically. Lateral/Medial are hemisphere-aware
+  // (Req 8: the left hemisphere's lateral face is toward RIGHT_SIDE azimuth, its medial toward LEFT_SIDE).
+  // NOTE: the angle constants are the most likely things to need a visual tweak.
   setView(name: 'lateral' | 'medial' | 'ventral' | 'dorsal' | 'anterior' | 'posterior', preferHemi: 0 | 1 = 0): void {
     const LEFT_SIDE = 270
     const RIGHT_SIDE = 90
-    // Dorsal/Ventral look down the long anterior–posterior axis, so they need to zoom out.
-    const VIEW_FACTOR: Record<string, number> = { lateral: 1, medial: 1, anterior: 1, posterior: 1, dorsal: 0.72, ventral: 0.72 }
     let az = 110
     let el = 0
     switch (name) {
@@ -1141,9 +1450,8 @@ export class MultiView {
         break
     }
     try {
-      this.render.scene.volScaleMultiplier = this.#baseScale * (VIEW_FACTOR[name] ?? 1)
       this.render.setRenderAzimuthElevation(az, el)
-      this.render.drawScene()
+      this.#fitSurfaceToView() // reframe to fill the pane at the new orientation (redraws)
     } catch {
       // no surface yet
     }

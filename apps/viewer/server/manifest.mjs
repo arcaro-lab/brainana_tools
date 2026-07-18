@@ -7,7 +7,39 @@
 //      and fastsurfer output may be keyed by subject or subject+session.
 import fs from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { ensureDerivedAssets } from './freesurfer.mjs'
+
+// Bundled fallback atlas LUTs shipped with the app (apps/viewer/server/atlas_info/).
+// These apply when a subject's own atlas dir has no per-atlas .tsv sidecar. The content is
+// inlined as a data: URL so no extra server routes or security-boundary exceptions are needed.
+// Results are memoized — bundled files never change at runtime and manifests rebuild per subject.
+const BUNDLED_ATLAS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'atlas_info')
+const _bundledCache = new Map()
+function bundledAtlasDataUrl(name) {
+  if (_bundledCache.has(name)) return _bundledCache.get(name)
+  let url = null
+  try {
+    const content = fs.readFileSync(path.join(BUNDLED_ATLAS_DIR, `atlas-${name}.tsv`), 'utf8')
+    url = 'data:text/plain;charset=utf-8,' + encodeURIComponent(content)
+  } catch {
+    // No bundled LUT for this atlas name — labels stay null.
+  }
+  _bundledCache.set(name, url)
+  return url
+}
+
+// Atlas display order: ARM<n> first (numeric), then D99, MacBNA, CortHierarchy, FuncNetwork,
+// then everything else alphabetically. Both the right-panel picker and the bottom info panel
+// consume manifest.atlases in arrival order, so this single sort controls both displays.
+const ATLAS_TIER = ['d99', 'macbna', 'corthierarchy', 'funcnetwork']
+function atlasTier(name) {
+  const lower = name.toLowerCase()
+  const armMatch = lower.match(/^arm(\d+)$/)
+  if (armMatch) return { tier: 0, sub: Number(armMatch[1]) }
+  const idx = ATLAS_TIER.indexOf(lower)
+  return idx >= 0 ? { tier: idx + 1, sub: 0 } : { tier: ATLAS_TIER.length + 1, sub: 0 }
+}
 
 function exists(p) {
   try {
@@ -219,8 +251,10 @@ export function buildManifest({ outputRoot, subjectDir, fileUrl }) {
     const base = `atlas-${name}`
     const volFile = pick(atlasFiles, [new RegExp(`^${escapeRegex(base)}_space-.*\\.nii\\.gz$`, 'i')])
     if (!volFile) return null
-    const lutFile = pick(atlasFiles, [new RegExp(`^${escapeRegex(base)}\\.tsv$`, 'i')])
-    return { name, label: name, volume: fileUrl(volFile), labels: lutFile ? fileUrl(lutFile) : null, surface: surfacePairFor(base) }
+    const localLut = pick(atlasFiles, [new RegExp(`^${escapeRegex(base)}\\.tsv$`, 'i')])
+    // Prefer the local sidecar; fall back to the bundled app LUT (a data: URL, no extra route).
+    const labelsUrl = localLut ? fileUrl(localLut) : bundledAtlasDataUrl(name)
+    return { name, label: name, volume: fileUrl(volFile), labels: labelsUrl, surface: surfacePairFor(base) }
   }
   // Collect distinct atlas names from the label volumes present on disk.
   const atlasNames = []
@@ -233,17 +267,11 @@ export function buildManifest({ outputRoot, subjectDir, fileUrl }) {
     seenAtlas.add(name)
     atlasNames.push(name)
   }
-  // Order: ARM<n> numerically first, then the rest alphabetically (numeric collation).
-  const armLevel = (name) => {
-    const m = name.match(/^ARM(\d+)$/i)
-    return m ? Number(m[1]) : null
-  }
   atlasNames.sort((a, b) => {
-    const la = armLevel(a)
-    const lb = armLevel(b)
-    if (la != null && lb != null) return la - lb
-    if (la != null) return -1
-    if (lb != null) return 1
+    const la = atlasTier(a)
+    const lb = atlasTier(b)
+    if (la.tier !== lb.tier) return la.tier - lb.tier
+    if (la.sub !== lb.sub) return la.sub - lb.sub
     return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
   })
   const atlasList = atlasNames.map(atlasEntryFor).filter(Boolean)

@@ -95,8 +95,12 @@ export function displayLabel(l: AtlasLabel): string {
   return h ? `${name} · ${h}` : name
 }
 
-// Prefer the authored TSV color when the row supplies one; otherwise fall back to the
-// procedural golden-angle color (which also carries the WM/CSF tissue special-cases).
+// Atlas color policy (single source of truth): the authored TSV `color` column always wins when a
+// row supplies one; otherwise fall back to the procedural golden-angle color (which also carries the
+// WM/CSF tissue special-cases). This is deliberate and NOT name-special-cased — so atlases that ship
+// a `color` column (e.g. ARM4, FuncNetwork) legitimately look different from sibling atlases that
+// don't (e.g. ARM1/2/3/5/6, which get procedural colors). Consistency here means "honor authored
+// colors whenever present", not "make every atlas look the same".
 export function labelColor(l: AtlasLabel, seed: number): RGB {
   return l.color ?? roiColor(l.id, l.region, seed)
 }

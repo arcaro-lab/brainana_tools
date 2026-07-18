@@ -11,7 +11,6 @@ import type { ColormapInfo } from '../../data/colormap.ts'
 export interface ColorDisplayCallbacks {
   onColormap: (key: string) => void
   onDisplayRange: (min: number, max: number) => void
-  onDisplaySymmetric?: (on: boolean) => void
   onDisplayAuto?: () => void
   onClipRange?: (lo: number | null, hi: number | null) => void
   onReset?: () => void
@@ -21,11 +20,13 @@ export interface ColorDisplayTarget {
   title: string
   colormap: string
   legendShape: LegendShape
+  /** Hide the legend entirely (e.g. categorical atlas, where the ROI list above IS the legend and a
+   *  continuous gradient bar over label ids is meaningless/misleading). Defaults to shown. */
+  showLegend?: boolean
   gradient: string
   lut?: ArrayLike<number>
   displayDomain: { min: number; max: number }
   displayRange: { min: number; max: number }
-  displaySymmetric?: boolean
   /** Hide the display-range slider (e.g. categorical atlas, where the map spreads across label ids). */
   showDisplayRange?: boolean
   /** Pin the display-range lower bound so only the upper bound drags (continuous atlas). */
@@ -71,8 +72,6 @@ export function createColorDisplay(
   let clipDomain = { min: 0, max: 1 }
   const displayRange: RangeControl = createRangeControl({
     onChange: ({ min, max }) => cb.onDisplayRange(min, max),
-    symmetric: cb.onDisplaySymmetric ? false : undefined,
-    onSymmetric: cb.onDisplaySymmetric,
   })
   const clipRange: RangeControl = createRangeControl({
     onChange: ({ min, max }) => {
@@ -81,8 +80,20 @@ export function createColorDisplay(
       cb.onClipRange?.(lo, hi)
     },
   })
-  const displayField = h('div', { class: 'field' }, [h('span', {}, ['display']), displayRange.element])
-  const clipRangeField = h('div', { class: 'field' }, [h('span', {}, ['clip']), clipRange.element])
+
+  // Shared 3-column grid: [label (dcg-label)] [min side (range-side)] [max side (range-side)]
+  // Both display and clip rows align their min/max columns on the same grid edges.
+  const displayLabel = h('span', { class: 'dcg-label' }, ['display'])
+  const clipLabel = h('span', { class: 'dcg-label' }, ['clip'])
+
+  const rangesGrid = h('div', { class: 'display-clip-grid' }, [
+    displayLabel,
+    displayRange.minSide,
+    displayRange.maxSide,
+    clipLabel,
+    clipRange.minSide,
+    clipRange.maxSide,
+  ])
 
   const body = h('div', { class: 'color-display-body' }, [
     h('div', { class: 'field' }, [
@@ -90,11 +101,10 @@ export function createColorDisplay(
       picker.element,
     ]),
     legend.element,
-    displayField,
-    clipRangeField,
+    rangesGrid,
   ])
   const element = h('div', { class: 'color-display', hidden: true }, [
-    h('div', { class: 'color-display-title' }, [head],),
+    h('div', { class: 'color-display-title' }, [head]),
     body,
   ])
   // Clicking the header collapses/expands the body (keeps a short window usable).
@@ -119,27 +129,37 @@ export function createColorDisplay(
       }
       if (t.colormaps) picker.setInfos(t.colormaps)
       picker.setValue(t.colormap)
-      // Legend
-      legend.set({
-        shape: t.legendShape,
-        gradient: t.gradient,
-        lut: t.lut,
-        min: t.displayRange.min,
-        max: t.displayRange.max,
-        clipLow: t.clipValue?.lo ?? null,
-        clipHigh: t.clipValue?.hi ?? null,
-        unit: t.unit,
-        ticks: t.barTicks,
-      })
+      // Legend — hidden when the target opts out (categorical atlas: the ROI list IS the legend, and a
+      // gradient bar over label ids is misleading). legend.set() re-shows the element, so hide instead.
+      if (t.showLegend === false) {
+        legend.hide()
+      } else {
+        legend.set({
+          shape: t.legendShape,
+          gradient: t.gradient,
+          lut: t.lut,
+          min: t.displayRange.min,
+          max: t.displayRange.max,
+          clipLow: t.clipValue?.lo ?? null,
+          clipHigh: t.clipValue?.hi ?? null,
+          unit: t.unit,
+          ticks: t.barTicks,
+        })
+      }
       // Display range
-      displayField.hidden = t.showDisplayRange === false
+      const showDisplay = t.showDisplayRange !== false
+      displayLabel.hidden = !showDisplay
+      displayRange.minSide.hidden = !showDisplay
+      displayRange.maxSide.hidden = !showDisplay
       displayRange.setDomain(t.displayDomain.min, t.displayDomain.max)
       displayRange.setValue(t.displayRange.min, t.displayRange.max)
-      if (t.displaySymmetric !== undefined) displayRange.setSymmetric(t.displaySymmetric)
       displayRange.setLockMin(!!t.lockMin)
       // Clip variant
-      clipRangeField.hidden = t.clip !== 'range'
-      if (t.clip === 'range' && t.clipDomain) {
+      const showClip = t.clip === 'range'
+      clipLabel.hidden = !showClip
+      clipRange.minSide.hidden = !showClip
+      clipRange.maxSide.hidden = !showClip
+      if (showClip && t.clipDomain) {
         clipDomain = t.clipDomain
         clipRange.setDomain(t.clipDomain.min, t.clipDomain.max)
         clipRange.setValue(t.clipValue?.lo ?? t.clipDomain.min, t.clipValue?.hi ?? t.clipDomain.max)

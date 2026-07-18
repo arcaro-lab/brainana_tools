@@ -1,7 +1,7 @@
 // Reusable min/max range control: two crafted sliders with live numeric read-outs, an optional
-// "Auto" (percentile) button and an optional "Symmetric" (mirror around zero) toggle. Generalized
-// from the morphology panel so morphology, functional, and future imported overlays share one
-// range widget. Pure UI (h() helper); the host owns the data and computes Auto ranges.
+// "Auto" (percentile) button. Generalized from the morphology panel so morphology, functional,
+// and future imported overlays share one range widget. Pure UI (h() helper); the host owns the
+// data and computes Auto ranges.
 import { h } from '../dom.ts'
 
 export interface RangeValue {
@@ -15,19 +15,18 @@ export interface RangeControlOptions {
   /** Show an "Auto" button; the host computes + pushes the range back via setValue. */
   onAuto?: () => void
   autoLabel?: string
-  /** Show a "Symmetric" toggle initialised to this state; omit to hide it. */
-  symmetric?: boolean
-  onSymmetric?: (on: boolean) => void
   /** Format a value for the read-out (defaults to 3 significant decimals, trimmed). */
   format?: (v: number) => string
 }
 
 export interface RangeControl {
-  element: HTMLElement
+  /** The min side: label + number read-out + range slider, for placing as a grid item. */
+  minSide: HTMLElement
+  /** The max side: label + number read-out + range slider, for placing as a grid item. */
+  maxSide: HTMLElement
   setDomain: (min: number, max: number, step?: number) => void
   setValue: (min: number, max: number) => void
   value: () => RangeValue
-  setSymmetric: (on: boolean) => void
   /** Pin the lower bound: disable the min handle/box so only the upper bound drags (e.g. atlas). */
   setLockMin: (on: boolean) => void
   /** Blank/disable the control (e.g. no active metric). */
@@ -41,7 +40,6 @@ const defaultFmt = (v: number): string => {
 
 export function createRangeControl(opts: RangeControlOptions): RangeControl {
   const fmt = opts.format ?? defaultFmt
-  let symmetric = !!opts.symmetric
 
   const minInput = h('input', { type: 'range' }) as HTMLInputElement
   const maxInput = h('input', { type: 'range' }) as HTMLInputElement
@@ -52,35 +50,19 @@ export function createRangeControl(opts: RangeControlOptions): RangeControl {
   let domainMin = 0
   let domainMax = 1
   let step = 0.001
-  // Symmetric mode needs symmetric slider bounds, else −mag can fall outside an asymmetric domain
-  // and the min handle clamps to the left edge (looking stuck). Widen the bounds to ±max(|lo|,|hi|).
+
   const applyBounds = (): void => {
-    let lo = domainMin
-    let hi = domainMax
-    if (symmetric) {
-      const b = Math.max(Math.abs(domainMin), Math.abs(domainMax))
-      lo = -b
-      hi = b
-    }
     for (const inp of [minInput, maxInput]) {
-      inp.min = String(lo)
-      inp.max = String(hi)
+      inp.min = String(domainMin)
+      inp.max = String(domainMax)
       inp.step = String(step)
     }
   }
 
-  // `source` = the handle the user moved; in symmetric mode its magnitude drives BOTH handles, so
-  // either slider can shrink/grow the range (previously the larger magnitude always won → min stuck).
   const commit = (source: 'min' | 'max'): void => {
     let lo = Number(minInput.value)
     let hi = Number(maxInput.value)
-    if (symmetric) {
-      const mag = Math.abs(source === 'min' ? lo : hi)
-      lo = -mag
-      hi = mag
-      minInput.value = String(lo)
-      maxInput.value = String(hi)
-    } else if (lo > hi) {
+    if (lo > hi) {
       if (source === 'min') hi = lo
       else lo = hi
       minInput.value = String(lo)
@@ -107,31 +89,21 @@ export function createRangeControl(opts: RangeControlOptions): RangeControl {
   minVal.addEventListener('change', () => editBox(minVal, minInput, 'min'))
   maxVal.addEventListener('change', () => editBox(maxVal, maxInput, 'max'))
 
-  const actions: Array<Node> = []
-  let symChip: HTMLButtonElement | null = null
-  if (opts.onSymmetric || opts.symmetric !== undefined) {
-    symChip = h('button', { type: 'button', class: `chip${symmetric ? ' active' : ''}` }, ['symmetric']) as HTMLButtonElement
-    symChip.addEventListener('click', () => {
-      symmetric = !symmetric
-      symChip!.classList.toggle('active', symmetric)
-      applyBounds() // symmetric bounds so the mirrored handles fit
-      opts.onSymmetric?.(symmetric)
-      if (symmetric) commit('max')
-    })
-    actions.push(symChip)
-  }
+  // Each side is a label element: [cap row: "min/max" + number read-out] stacked over [slider].
+  // Exposed as separate DOM nodes so the host can place them as independent grid items.
+  const minSide = h('label', { class: 'range-side' }, [
+    h('span', { class: 'range-cap' }, ['min ', minVal]),
+    minInput,
+  ]) as HTMLElement
 
-  const element = h('div', { class: 'range-control field' }, [
-    ...(opts.label ? [h('span', {}, [opts.label])] : []),
-    h('div', { class: 'range-pair' }, [
-      h('label', { class: 'range-side' }, [h('span', { class: 'range-cap' }, ['min ', minVal]), minInput]),
-      h('label', { class: 'range-side' }, [h('span', { class: 'range-cap' }, ['max ', maxVal]), maxInput]),
-    ]),
-    ...(actions.length ? [h('div', { class: 'chip-row range-actions' }, actions)] : []),
-  ])
+  const maxSide = h('label', { class: 'range-side' }, [
+    h('span', { class: 'range-cap' }, ['max ', maxVal]),
+    maxInput,
+  ]) as HTMLElement
 
   return {
-    element,
+    minSide,
+    maxSide,
     setDomain: (min, max, st) => {
       domainMin = min
       domainMax = max
@@ -145,20 +117,16 @@ export function createRangeControl(opts: RangeControlOptions): RangeControl {
       maxVal.value = fmt(max)
     },
     value: () => ({ min: Number(minInput.value), max: Number(maxInput.value) }),
-    setSymmetric: (on) => {
-      symmetric = on
-      symChip?.classList.toggle('active', on)
-      applyBounds()
-    },
     setLockMin: (on) => {
       minInput.disabled = on
       minVal.disabled = on
-      element.classList.toggle('lock-min', on)
+      minSide.classList.toggle('range-side-locked', on)
     },
     setDisabled: (disabled) => {
       minInput.disabled = disabled
       maxInput.disabled = disabled
-      element.classList.toggle('is-disabled', disabled)
+      minSide.classList.toggle('is-disabled', disabled)
+      maxSide.classList.toggle('is-disabled', disabled)
     },
   }
 }

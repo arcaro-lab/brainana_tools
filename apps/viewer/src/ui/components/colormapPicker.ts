@@ -85,14 +85,43 @@ export function createColormapPicker(opts: ColormapPickerOptions): ColormapPicke
     if (e.key === 'Escape') close()
   }
 
+  // Position the popover with position:fixed anchored to the trigger's viewport rect so it escapes
+  // any ancestor overflow/clipping (the color-display section is docked at the bottom of a scrollable
+  // side panel). Drop UP when there is more room above than below, and cap the height to the available
+  // space so the list always fits and scrolls internally instead of being cut off.
+  const GAP = 4
+  const positionPop = (): void => {
+    const r = trigger.getBoundingClientRect()
+    const below = window.innerHeight - r.bottom - GAP
+    const above = r.top - GAP
+    const dropUp = below < 200 && above > below
+    pop.style.position = 'fixed'
+    pop.style.left = `${r.left}px`
+    pop.style.width = `${r.width}px`
+    pop.style.right = 'auto'
+    pop.style.maxHeight = `${Math.min(320, Math.max(120, dropUp ? above : below))}px`
+    if (dropUp) {
+      pop.style.top = 'auto'
+      pop.style.bottom = `${window.innerHeight - r.top + GAP}px`
+    } else {
+      pop.style.bottom = 'auto'
+      pop.style.top = `${r.bottom + GAP}px`
+    }
+  }
+
   function openPop(): void {
     if (open) return
     open = true
     buildOptions()
     pop.hidden = false
+    positionPop()
     trigger.classList.add('open')
     document.addEventListener('pointerdown', onDocPointer, true)
     document.addEventListener('keydown', onKey)
+    // Keep it anchored if the panel scrolls or the window resizes while open (capture catches scrolls
+    // on inner scrollers, not just window).
+    document.addEventListener('scroll', positionPop, true)
+    window.addEventListener('resize', positionPop)
   }
   function close(): void {
     if (!open) return
@@ -101,6 +130,8 @@ export function createColormapPicker(opts: ColormapPickerOptions): ColormapPicke
     trigger.classList.remove('open')
     document.removeEventListener('pointerdown', onDocPointer, true)
     document.removeEventListener('keydown', onKey)
+    document.removeEventListener('scroll', positionPop, true)
+    window.removeEventListener('resize', positionPop)
   }
 
   trigger.addEventListener('click', () => (open ? close() : openPop()))

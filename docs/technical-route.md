@@ -164,7 +164,8 @@ A `DataSource` is the uniform interface the runtime talks to: `listMonkeys`, `bu
   float-scalar atlases such as CortHierarchy rendered via a colormap), morphology, and function pickers; a unified
   **Color display** section (colormap picker, legend, display range, clip) that targets whichever
   overlay is active; per-crosshair coordinate/anatomy/function reports; a **visual-field plot**;
-  arrow-key crosshair nudging; layout presets and camera view presets.
+  arrow-key crosshair nudging; layout presets and camera view presets. For how colormaps are chosen,
+  stored, and applied to both slices and the surface, see [colormap-management.md](colormap-management.md).
 - **Staged, not yet wired into the UI:** imported-volume **surface projection**
   (`@brainana/imaging-math/projection.ts` + `workers/projection.worker.ts` + `niivue/projectionClient.ts`)
   and **ROI generation** (`@brainana/imaging-math/roiWarp.ts`). These are implemented and unit-tested

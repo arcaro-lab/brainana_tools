@@ -44,6 +44,11 @@ files:
   - "apps/viewer/desktop.mjs"
   - "apps/viewer/dist/**/*"
   - "apps/viewer/server/**/*.mjs"
+  # Bundled fallback atlas LUTs (apps/viewer/server/atlas_info/*.tsv). These are read at runtime by
+  # manifest.mjs via fs.readFileSync (which works from inside app.asar) when a subject has no per-atlas
+  # sidecar. WITHOUT this line the *.mjs-only glob above drops them, so the fallback silently no-ops in
+  # the packaged app while still working in `npm run dev` (which reads from the source tree).
+  - "apps/viewer/server/**/*.tsv"
   - "apps/viewer/package.json"
   - "package.json"
   - "!**/*.ts"
@@ -66,10 +71,13 @@ linux:
 
 mac:
   # Both Mac chips (Apple Silicon arm64 + Intel x64) are built in CI, where release.yml passes
-  # `--arm64 --x64` to electron-builder on a macOS runner → separate arm64 and x64 .dmg/.zip.
+  # `--arm64 --x64` to electron-builder on a macOS runner → separate arm64 and x64 .dmg.
   # A local `npm run dist:desktop` intentionally builds only the host chip (fast dev builds);
   # cross-chip release artifacts always come from the tag-triggered workflow.
-  target: [dmg, zip]
+  # Only `dmg` (no `zip`): the .zip is a large duplicate the app doesn't need today. Re-add `zip`
+  # here IF/when macOS auto-update (electron-updater) is wired in — it updates from the .zip, not
+  # the .dmg. Dropping it also stops the redundant *-mac.zip + *.blockmap release assets.
+  target: [dmg]
   category: public.app-category.medical
   # CURRENT (no Apple account): electron-builder skips its own signing, then build/afterPack.cjs
   # ad-hoc signs the .app. Result on the recipient's Mac = the softer "could not verify" prompt

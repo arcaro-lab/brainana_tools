@@ -28,7 +28,11 @@ function uvSphere(stacks: number, slices: number, scale = 1): { pts: Float32Arra
     for (let j = 0; j < slices; j++) {
       const a = i * (slices + 1) + j
       const b = a + slices + 1
-      tris.push(a, b, a + 1, b, b + 1, a + 1)
+      // Wound so the face normals point OUTWARD. NiiVue derives per-vertex normals straight from this
+      // winding (NVMesh.generateNormals) and back-face-culls, so the reversed order (a, b, a+1) would
+      // give inward normals — culling the camera-facing cap and inverting the shading, which renders
+      // as a dark hole in the middle of the pin at larger sizes.
+      tris.push(a, a + 1, b, b, a + 1, b + 1)
     }
   }
   return { pts: new Float32Array(pts), tris: new Uint32Array(tris) }
@@ -69,6 +73,13 @@ export class Marker {
   setSize(scale: number): void {
     this.#scale = Math.max(0.2, Math.min(5, scale))
     this.#base = uvSphere(10, 14, this.#scale)
+  }
+
+  // Distance the pin's CENTRE is pushed outward from the picked vertex along the surface normal
+  // (see setWorld). Hit-testing must project this lifted centre — not the bare vertex — or the pin
+  // reads as offset from wherever it can be grabbed.
+  liftAmount(): number {
+    return R_HEIGHT * this.#scale
   }
 
   #existing(): NVMesh | undefined {
