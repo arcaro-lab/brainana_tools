@@ -34,6 +34,10 @@ All notable changes to Brainana Viewer are documented here.
   `data-contract.md` now point at it (`npm run server -- --output-dir datasets/demo_viewer`).
 - CI skeleton (macOS/Linux/Windows matrix); headless tests for server, security, sftp,
   and the built frontend (token injection).
+- **Desktop packaging + release pipeline**: electron-builder config
+  (`apps/viewer/electron-builder.yml`) and a tag-triggered GitHub Actions release matrix
+  (`.github/workflows/release.yml`) that builds Mac (Apple Silicon + Intel), Windows, and Linux
+  installers and publishes them to a draft GitHub Release. Procedure: `docs/publishing.md`.
 
 - **Phase 2 unified data path**: `packages/core-client` source manager + in-app source chooser
   (`apps/viewer/src/ui/dialogs/sources.ts`); simultaneous multi-source, source-scoped throughout.
@@ -61,5 +65,5 @@ All notable changes to Brainana Viewer are documented here.
 - Remaining Phase 3 parity: imported-volume **surface projection** and **ROI generation**
   (staged + unit-tested in `packages/imaging-math/{projection,roiWarp}.ts`; a `projectionClient`
   + worker exists but is not yet driven from any panel, and ROI generation is unwired);
-  snapshot/state/ZIP export UI. Phase 4 per-OS packaging/signing; Phase 5 full test/browser
-  matrix + architecture docs.
+  snapshot/state/ZIP export UI. Code signing / notarization (Phase 4 packaging otherwise done);
+  Phase 5 full test/browser matrix + architecture docs.

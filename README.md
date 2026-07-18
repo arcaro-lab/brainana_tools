@@ -11,42 +11,57 @@ Cross-platform NiiVue viewer for per-subject (`sub-*`) output of the
 
 > **Status:** Source-first rebuild (fresh `0.x` line). Phases 0–2 complete
 > (foundation, core platform, unified multi-source data path); Phase 3 (NiiVue SPA)
-> substantially built; Phase 4 desktop packaging (Electron) built and verified.
-> Release CI and the full browser/test matrix are still ahead. See
-> [docs/technical-route.md](docs/technical-route.md).
+> substantially built; Phase 4 desktop packaging (Electron) built and verified, with a
+> tag-triggered GitHub Actions release pipeline for Mac/Windows/Linux installers. The full
+> browser/test matrix is still ahead. See [docs/technical-route.md](docs/technical-route.md).
 
-## Requirements
+## Download & install
 
-- **Node ≥ 22.18** — unit tests import `.ts` sources directly via Node type stripping
-- A modern desktop browser with **WebGL2** (Chrome/Edge baseline; Firefox/Safari supported)
+Grab the app for your operating system from the **[Releases page](../../releases/latest)** — no
+Node, no build, no command line. Pick the file that matches your system:
 
-## Quick start
+| Your system | Download |
+| ----------- | -------- |
+| **macOS — Apple Silicon** (M1/M2/M3…) | `Brainana Viewer-*-arm64.dmg` |
+| **macOS — Intel** | `Brainana Viewer-*.dmg` |
+| **Windows** | `Brainana Viewer Setup *.exe` |
+| **Linux** | `Brainana Viewer-*.AppImage` or `brainana-viewer_*_amd64.deb` |
 
-A trimmed demo subject (`sub-example`) ships in
-[datasets/demo_viewer/](datasets/demo_viewer/) — no data of your own needed:
+> **First launch:** the app is currently **unsigned**, so macOS and Windows show a one-time
+> "unidentified developer" prompt. On macOS **right-click → Open**; on Windows choose **More info
+> → Run anyway**. Linux has no prompt. Full per-OS steps are in
+> [docs/publishing.md](docs/publishing.md#what-your-users-will-see-unsigned-build).
+
+Not sure which Mac chip you have? **Apple menu → About This Mac.** No account, dataset, or setup
+is required — a demo subject is bundled so you can open the app and look around immediately.
+
+---
+
+## For developers
+
+Everything below is for building and contributing to the Viewer, not for using the app.
+
+**Requirements:** **Node ≥ 22.18** (unit tests import `.ts` sources directly via Node type
+stripping) and a WebGL2-capable browser (Chrome/Edge baseline; Firefox/Safari supported).
 
 ```sh
 npm install                                                       # workspace deps (single lockfile)
-npm run server -- --port 5174 --output-dir datasets/demo_viewer   # Terminal 1: API + demo data
+npm run server -- --port 5174 --output-dir datasets/demo_viewer   # Terminal 1: API + bundled demo data
 npm run dev:web                                                   # Terminal 2: Vite UI → http://localhost:5173
 ```
 
-Open the URL Vite prints and select `sub-example`. Alternatively, launch unbound
-(`npm start` or `npm run dev:desktop`) and add `datasets/demo_viewer` in-app via the
-local-source picker.
-
-## Develop
+Open the URL Vite prints and select `sub-example`. Other common commands:
 
 ```sh
 npm test               # headless: domain math, server, security, sftp, built-frontend token injection, core-purity guard
-npm run dev:web        # Vite dev server (client HMR) — pair with `npm run server`
 npm start              # launch the Viewer: free port, 127.0.0.1 bind, open browser
 npm run dev:desktop    # launch as a native Electron app (bundled Chromium)
-npm run dist:desktop   # build per-OS desktop installers → apps/viewer/release/
+npm run dist:desktop   # build desktop installers for THIS OS → apps/viewer/release/
 ```
 
-See [docs/dev_guideline.md](docs/dev_guideline.md) for the two-process model, ports, and
-troubleshooting, and [docs/desktop-app.md](docs/desktop-app.md) for the Electron shell.
+- [docs/dev_guideline.md](docs/dev_guideline.md) — two-process model, ports, troubleshooting.
+- [docs/desktop-app.md](docs/desktop-app.md) — the Electron shell (how the desktop app is built).
+- [docs/publishing.md](docs/publishing.md) — **how to publish a release** (tag → CI builds all-OS installers → GitHub Release).
 
 ## Architecture
 

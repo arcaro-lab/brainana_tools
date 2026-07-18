@@ -93,8 +93,9 @@ npm run dist:desktop    # build SPA, then electron-builder → apps/viewer/relea
 | Linux | `.AppImage`, `.deb` | AppImage: `chmod +x` and run; deb: `apt install ./file.deb` |
 
 **Cross-compilation caveat:** each OS's artifact must be built on that OS (macOS signing/notarization
-requires macOS, etc.). Build all three via a CI matrix (macos/windows/ubuntu runners) — not yet added
-(see "Not yet done"). `apps/viewer/release/` is gitignored.
+requires macOS, etc.). All three (plus both Mac chips) are built by the tag-triggered CI matrix in
+`.github/workflows/release.yml` — see [publishing.md](publishing.md) for the release procedure.
+`apps/viewer/release/` is gitignored.
 
 ### What ships (and what doesn't)
 
@@ -128,7 +129,8 @@ cannot load from inside an asar). Net: SFTP works either way.
 
 ## Distribution & signing
 
-- **v1 — unsigned (free):** publish artifacts on **GitHub Releases**. First launch warns:
+- **v1 — unsigned (free):** publish artifacts on **GitHub Releases** (procedure:
+  [publishing.md](publishing.md)). First launch warns:
   macOS Gatekeeper → **right-click → Open** (or `xattr -dr com.apple.quarantine <app>`); Windows
   SmartScreen → "More info → Run anyway"; Linux has no such gate. Fine for you + known users. The
   `mac.identity: null` in the yml selects ad-hoc (unsigned) signing.
@@ -149,6 +151,8 @@ cannot load from inside an asar). Net: SFTP works either way.
 
 ## Not yet done
 
-- A **GitHub Actions release matrix** to build all three OS artifacts on a tag.
 - Code signing / notarization (needed only for wider distribution).
 - Auto-update (`electron-updater` against GitHub Releases) — an easy later add-on.
+
+Done: the **GitHub Actions release matrix** that builds all three OS artifacts (both Mac chips) on
+a tag now lives in `.github/workflows/release.yml` — see [publishing.md](publishing.md).

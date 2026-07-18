@@ -1,0 +1,64 @@
+name: Release
+
+# Build the desktop installers for every OS and publish them to a GitHub Release.
+#
+# Trigger: push a version tag like `v0.1.0` (see docs/publishing.md for the full procedure),
+# or run manually from the Actions tab (workflow_dispatch) to smoke-test the pipeline.
+#
+# Each OS builds its own installers on its own runner (electron-builder cannot cross-compile
+# macOS/Windows installers from Linux). electron-builder uploads them to a DRAFT GitHub Release
+# for this tag; all three jobs target the same draft. You then review the draft and click Publish.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+# The built-in GITHUB_TOKEN needs write access to create/upload the Release.
+permissions:
+  contents: write
+
+# One release run per tag; a re-push of the same tag cancels the older run.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    name: build & publish (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Don't let one OS failing abort the others — you can re-run just the failed job.
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            build_args: "--linux"
+          - os: windows-latest
+            build_args: "--win"
+          # One macOS runner builds BOTH chips: Apple Silicon (arm64) + Intel (x64).
+          - os: macos-latest
+            build_args: "--mac --arm64 --x64"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Node >= 22.18 — matches engines.node and the CI workflow (type-stripping tests).
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (generate-version + tsc + vite → dist/)
+        run: npm run build
+
+      - name: Package installers and publish to the draft GitHub Release
+        # electron-builder reads `publish: {provider: github}` from the yml and uploads to a
+        # draft release keyed to this tag. `--publish always` uploads on every run (including
+        # workflow_dispatch, which is useful for a v0.0.0-test smoke run).
+        run: npx electron-builder --config apps/viewer/electron-builder.yml ${{ matrix.build_args }} --publish always
+        env:
+          # electron-builder's GitHub publisher authenticates with this (GH_TOKEN or GITHUB_TOKEN).
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

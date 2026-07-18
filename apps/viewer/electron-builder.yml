@@ -5,6 +5,22 @@ appId: org.brainana.viewer
 productName: Brainana Viewer
 copyright: Brainana
 
+# Where `--publish` uploads the built installers. `provider: github` targets a GitHub Release,
+# uploaded to a DRAFT by default (you review + click Publish). owner/repo are pinned so the fork
+# (origin) is used rather than the `upstream` remote. CHANGE owner to `arcaro-lab` once releases
+# move to the lab repo (requires write access + a token with that access in CI). The release
+# workflow (.github/workflows/release.yml) drives this on a version tag; a plain local
+# `npm run dist:desktop` never publishes (it omits `--publish`). See docs/publishing.md.
+publish:
+  provider: github
+  owner: xingyu-liu
+  repo: brainana_tools
+
+# Ad-hoc code-sign the packaged macOS .app (see the hook for the full rationale). Turns
+# Gatekeeper's "app is damaged" hard block into the softer "could not verify" prompt.
+# No-op on Linux/Windows builds.
+afterPack: ./apps/viewer/build/afterPack.cjs
+
 asar: true
 # Native binaries (ssh2's optional cpu-features .node) cannot be loaded from inside an asar
 # archive — unpack them to disk. ssh2 falls back to pure JS if the ABI mismatches Electron's Node,
@@ -43,13 +59,37 @@ electronLanguages:
 linux:
   target: [AppImage, deb]
   category: Science
+  # The .deb format requires a package maintainer (the root package.json `author` is a bare
+  # name with no email). Using the GitHub no-reply address so no personal inbox is embedded in
+  # the publicly distributed .deb.
+  maintainer: Brainana <31683843+xingyu-liu@users.noreply.github.com>
 
 mac:
+  # Both Mac chips (Apple Silicon arm64 + Intel x64) are built in CI, where release.yml passes
+  # `--arm64 --x64` to electron-builder on a macOS runner → separate arm64 and x64 .dmg/.zip.
+  # A local `npm run dist:desktop` intentionally builds only the host chip (fast dev builds);
+  # cross-chip release artifacts always come from the tag-triggered workflow.
   target: [dmg, zip]
   category: public.app-category.medical
-  # v1 is unsigned/ad-hoc — fine for local + known users (right-click → Open on first launch).
-  # For wider distribution, set an Apple identity here and enable notarization.
+  # CURRENT (no Apple account): electron-builder skips its own signing, then build/afterPack.cjs
+  # ad-hoc signs the .app. Result on the recipient's Mac = the softer "could not verify" prompt
+  # (offers Open Anyway) instead of "damaged". If macOS still blocks it after download, the user
+  # can clear the quarantine flag: xattr -dr com.apple.quarantine "/Applications/Brainana Viewer.app"
   identity: null
+  #
+  # LATER — friction-free distribution (double-click opens, no prompt). Requires a paid Apple
+  # Developer ID ($99/yr). Steps: (1) remove `identity: null` above and delete the afterPack hook
+  # (real signing replaces it); (2) uncomment below and fill in your identity + Team ID;
+  # (3) create apps/viewer/build/entitlements.mac.plist (a standard Electron hardened-runtime
+  # plist); (4) provide notarization creds via env (APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD,
+  # APPLE_TEAM_ID) or a notarytool keychain profile. Docs: https://electron.build/code-signing-mac
+  # identity: "Developer ID Application: Your Name (TEAMID)"
+  # hardenedRuntime: true
+  # gatekeeperAssess: false
+  # entitlements: apps/viewer/build/entitlements.mac.plist
+  # entitlementsInherit: apps/viewer/build/entitlements.mac.plist
+  # notarize:
+  #   teamId: TEAMID
 
 win:
   target: [nsis]
