@@ -2,8 +2,13 @@ name: Release
 
 # Build the desktop installers for every OS and publish them to a GitHub Release.
 #
-# Trigger: push a version tag like `v0.1.0` (see docs/publishing.md for the full procedure),
-# or run manually from the Actions tab (workflow_dispatch) to smoke-test the pipeline.
+# Trigger: publish a GitHub Release (the "Publish release" web UI), OR push a version tag like
+# `v0.1.0` from a git client (see docs/publishing.md), OR run manually from the Actions tab
+# (workflow_dispatch) to smoke-test the pipeline.
+#
+# NOTE: creating a tag/release through the GitHub web UI (or API / `gh release create`) does NOT
+# emit the `push` tag event, so `push: tags` alone would silently skip UI-published releases.
+# The `release: published` trigger covers that path; `push: tags` still covers `git push` of a tag.
 #
 # Each OS builds its own installers on its own runner (electron-builder cannot cross-compile
 # macOS/Windows installers from Linux). electron-builder uploads them to a DRAFT GitHub Release
@@ -12,6 +17,8 @@ on:
   push:
     tags:
       - "v*"
+  release:
+    types: [published]
   workflow_dispatch:
 
 # The built-in GITHUB_TOKEN needs write access to create/upload the Release.
