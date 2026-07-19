@@ -52,7 +52,10 @@ async function main() {
     assert.ok((await spa.text()).includes('brainana-token'), 'SPA fallback also injects the token')
     ok('unknown routes fall back to the token-injected SPA shell')
   } finally {
-    await new Promise((resolve) => server.close(resolve))
+    await new Promise((resolve) => {
+      server.close(resolve)
+      server.closeAllConnections() // undici keeps sockets alive; force them shut so close() resolves cross-platform
+    })
   }
 
   console.log(`frontend_test: ${passed} checks passed`)

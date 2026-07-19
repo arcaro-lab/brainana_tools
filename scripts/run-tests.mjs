@@ -50,13 +50,22 @@ for (const test of tests) {
   const label = path.relative(root, test)
   console.log(`\n=== ${label} ===`)
   // Capture stdout so we can classify skip vs pass, then echo it through unchanged.
+  // A per-file timeout guarantees one hung test (e.g. a server that never closes) fails
+  // fast instead of stalling the whole matrix leg until CI's hard timeout.
   const result = spawnSync(process.execPath, [test], {
     cwd: root,
     encoding: 'utf8',
     stdio: ['inherit', 'pipe', 'inherit'],
+    timeout: 120000,
+    killSignal: 'SIGKILL',
   })
   if (result.stdout) process.stdout.write(result.stdout)
-  if (result.status !== 0) {
+  // spawnSync reports a timeout as ETIMEDOUT with status === null and the kill signal set.
+  const timedOut = result.error?.code === 'ETIMEDOUT' || result.signal === 'SIGKILL'
+  if (timedOut) {
+    failed += 1
+    console.log('  --> FAIL (timed out after 120s — likely a resource left open, e.g. an unclosed server)')
+  } else if (result.status !== 0) {
     failed += 1
     console.log(`  --> FAIL (exit ${result.status})`)
   } else if (SKIP_RE.test(result.stdout || '')) {

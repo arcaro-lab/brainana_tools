@@ -169,7 +169,10 @@ async function main() {
       console.log('  skip - real output dir not mounted here')
     }
   } finally {
-    await new Promise((resolve) => server.close(resolve))
+    await new Promise((resolve) => {
+      server.close(resolve)
+      server.closeAllConnections() // undici keeps sockets alive; force them shut so close() resolves cross-platform
+    })
     await fsp.rm(fixtureRoot, { recursive: true, force: true })
   }
 
