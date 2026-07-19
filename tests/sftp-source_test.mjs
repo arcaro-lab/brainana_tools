@@ -38,7 +38,9 @@ function startFakeSftpServer(rootDir) {
   // real fs directly; relative paths (if any) resolve under rootDir. Test double only.
   const toLocal = (p) => (path.isAbsolute(p) ? p : path.join(rootDir, p))
 
+  const clients = []
   const server = new Server({ hostKeys: [privateKey] }, (client) => {
+    clients.push(client)
     client.on('authentication', (ctx) => ctx.accept())
     client.on('ready', () => {
       client.on('session', (acceptSession) => {
@@ -154,8 +156,23 @@ function startFakeSftpServer(rootDir) {
   })
 
   return new Promise((resolve) => {
-    server.listen(0, '127.0.0.1', () => resolve({ server, port: server.address().port }))
+    server.listen(0, '127.0.0.1', () => resolve({ server, port: server.address().port, clients }))
   })
+}
+
+// Windows can't delete a directory that still holds an open file handle (EBUSY/EPERM), and
+// the SFTP server/cache may not have released every fd the instant close() returns. Retry a
+// few times with a short backoff so teardown is reliable across platforms.
+async function rmWithRetry(dir) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await fsp.rm(dir, { recursive: true, force: true })
+      return
+    } catch (error) {
+      if (attempt >= 10 || (error.code !== 'EBUSY' && error.code !== 'EPERM' && error.code !== 'ENOTEMPTY')) throw error
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+  }
 }
 
 let passed = 0
@@ -174,7 +191,7 @@ async function main() {
   await fsp.mkdir(path.join(remoteRoot, 'sub-r1', 'anat'), { recursive: true })
   await fsp.writeFile(path.join(remoteRoot, 'sub-r1', 'anat', 'sub-r1_space-T1w_desc-preproc_T1w.nii.gz'), Buffer.from('REMOTE-VOLUME-BYTES-9876543210'))
 
-  const { server, port } = await startFakeSftpServer(remoteRoot)
+  const { server, port, clients } = await startFakeSftpServer(remoteRoot)
 
   const source = new SftpDataSource({
     id: 'remote-aaaaaaaaaaaa',
@@ -216,9 +233,12 @@ async function main() {
     ok('saveFile returns exists=true without overwrite')
   } finally {
     await source.close()
-    server.close()
-    await fsp.rm(remoteRoot, { recursive: true, force: true })
-    await fsp.rm(cacheRoot, { recursive: true, force: true })
+    // Force any lingering server-side connections shut, then await the close callback, so no
+    // open socket/fd keeps the event loop alive (Windows would otherwise hang, then SIGKILL).
+    for (const client of clients) client.end()
+    await new Promise((resolve) => server.close(resolve))
+    await rmWithRetry(remoteRoot)
+    await rmWithRetry(cacheRoot)
   }
 
   console.log(`sftp-source_test: ${passed} checks passed`)

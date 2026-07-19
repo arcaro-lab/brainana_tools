@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import fsp from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { readSshHosts } from '@brainana/core-server/runtime.mjs'
+import { readSshHosts, parseSshConfig } from '@brainana/core-server/runtime.mjs'
 
 let passed = 0
 const ok = (name) => {
@@ -74,6 +74,24 @@ async function main() {
     assert.deepEqual(readSshHosts(), [])
     ok('returns [] when ~/.ssh/config is absent')
   })
+
+  // 5. parseSshConfig directly (no filesystem): a CRLF config (Windows-authored) parses
+  // identically to LF — this is the exact class of bug that would only bite Windows users.
+  const lf = parseSshConfig(['Host x', '  HostName 1.2.3.4', '  Port 22'].join('\n'))
+  const crlf = parseSshConfig(['Host x', '  HostName 1.2.3.4', '  Port 22'].join('\r\n'))
+  assert.deepEqual(crlf, lf, 'CRLF config parses identically to LF')
+  assert.deepEqual(lf, [{ host: 'x', hostName: '1.2.3.4', port: 22 }])
+  ok('parseSshConfig treats CRLF and LF identically')
+
+  // 6. Tab-indented keywords, a non-numeric Port (omitted), keyword-before-Host (ignored).
+  const messy = parseSshConfig(['User orphan', 'Host y', '\tHostName 10.0.0.1', '\tPort not-a-number'].join('\n'))
+  assert.deepEqual(messy, [{ host: 'y', hostName: '10.0.0.1' }], 'tabs accepted; bad Port dropped; pre-Host keyword ignored')
+  ok('parseSshConfig tolerates tabs, drops non-numeric Port, ignores keywords before any Host')
+
+  // 7. Empty/whitespace input → [].
+  assert.deepEqual(parseSshConfig(''), [], 'empty text yields no hosts')
+  assert.deepEqual(parseSshConfig('   \n\n# only a comment\n'), [], 'comments/blanks only yields no hosts')
+  ok('parseSshConfig returns [] for empty or comment-only input')
 
   console.log(`\nssh-config: ${passed} assertions passed`)
 }
