@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.base.json",
+  "include": ["packages/core-client", "packages/ui", "packages/niivue-kit", "apps/viewer/src", "packages/imaging-math"]
+}

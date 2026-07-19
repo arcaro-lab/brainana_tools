@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    name: build & test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Node >= 22.18 strips types on `import`, which the unit tests rely on
+          # (they import viewer/src/*.ts directly). Node 20 cannot run them.
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        # CI never launches Electron (tests are headless server + built frontend, build is
+        # tsc + vite), so skip the ~100 MB per-OS binary download — the biggest macOS/Windows
+        # time sink. Packaging in release.yml is unaffected (separate workflow).
+        run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+
+      - name: Generate version module
+        run: npm run generate-version
+
+      - name: Typecheck
+        run: npm run typecheck --if-present
+
+      - name: Build (tsc + vite) — also produces dist/ so the frontend token-injection test runs
+        run: npm run build
+
+      - name: Test (headless server smoke + security + sftp + built frontend)
+        run: npm test

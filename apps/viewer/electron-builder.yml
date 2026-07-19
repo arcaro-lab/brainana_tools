@@ -1,0 +1,104 @@
+# electron-builder config for the Brainana Viewer desktop app.
+# Run from the repo root: `npm run dist:desktop` (builds dist/ then packages per-OS installers).
+# The Electron entry is the root package.json "main" (apps/viewer/desktop.mjs).
+appId: org.brainana.viewer
+productName: Brainana Viewer
+copyright: Brainana
+
+# Where `--publish` uploads the built installers. `provider: github` targets a GitHub Release,
+# uploaded to a DRAFT by default (you review + click Publish). owner/repo are pinned to the lab
+# repo `arcaro-lab/brainana_tools` — that is where 1.0.0+ releases live. The tag-triggered
+# workflow (.github/workflows/release.yml) must therefore run ON arcaro-lab (push the `v*` tag
+# there): its GITHUB_TOKEN only has write access to the repo it runs in, so a run on a fork
+# could not publish here. Requires Actions enabled on arcaro-lab. A plain local
+# `npm run dist:desktop` never publishes (it omits `--publish`). See docs/publishing.md.
+publish:
+  provider: github
+  owner: arcaro-lab
+  repo: brainana_tools
+
+# Ad-hoc code-sign the packaged macOS .app (see the hook for the full rationale). Turns
+# Gatekeeper's "app is damaged" hard block into the softer "could not verify" prompt.
+# No-op on Linux/Windows builds.
+afterPack: ./apps/viewer/build/afterPack.cjs
+
+asar: true
+# Native binaries (ssh2's optional cpu-features .node) cannot be loaded from inside an asar
+# archive — unpack them to disk. ssh2 falls back to pure JS if the ABI mismatches Electron's Node,
+# so SFTP works regardless; this just lets a matching binary load if present.
+asarUnpack:
+  - "**/*.node"
+
+directories:
+  output: apps/viewer/release
+  # Icon source: electron-builder auto-detects build/icon.png (1024x1024) and generates
+  # the .icns (mac), .ico (win) and PNG set (linux) from it via its bundled app-builder.
+  buildResources: apps/viewer/build
+
+# App payload: the built SPA (Vite bundles NiiVue/fflate/nifti-reader-js into dist/, so those
+# devDependencies are NOT shipped as node_modules) + the app's own .mjs server/desktop code +
+# manifests. The @brainana/core-{desktop,launcher,server} packages ship via node_modules — they are
+# declared as production dependencies in the root package.json, so electron-builder dereferences
+# their workspace symlinks into node_modules inside app.asar automatically (alongside ssh2).
+# Everything TS/test/build-time is excluded.
+files:
+  - "apps/viewer/desktop.mjs"
+  - "apps/viewer/dist/**/*"
+  - "apps/viewer/server/**/*.mjs"
+  # Bundled fallback atlas LUTs (apps/viewer/server/atlas_info/*.tsv). These are read at runtime by
+  # manifest.mjs via fs.readFileSync (which works from inside app.asar) when a subject has no per-atlas
+  # sidecar. WITHOUT this line the *.mjs-only glob above drops them, so the fallback silently no-ops in
+  # the packaged app while still working in `npm run dev` (which reads from the source tree).
+  - "apps/viewer/server/**/*.tsv"
+  - "apps/viewer/package.json"
+  - "package.json"
+  - "!**/*.ts"
+  - "!**/*.map"
+  - "!**/tests/**"
+  - "!**/*.config.*"
+  - "!**/*.md"
+
+# Ship a single locale to trim the Chromium payload.
+electronLanguages:
+  - en-US
+
+linux:
+  target: [AppImage, deb]
+  category: Science
+  # The .deb format requires a package maintainer (the root package.json `author` is a bare
+  # name with no email). Using the GitHub no-reply address so no personal inbox is embedded in
+  # the publicly distributed .deb.
+  maintainer: Brainana <31683843+xingyu-liu@users.noreply.github.com>
+
+mac:
+  # Both Mac chips (Apple Silicon arm64 + Intel x64) are built in CI, where release.yml passes
+  # `--arm64 --x64` to electron-builder on a macOS runner → separate arm64 and x64 .dmg.
+  # A local `npm run dist:desktop` intentionally builds only the host chip (fast dev builds);
+  # cross-chip release artifacts always come from the tag-triggered workflow.
+  # Only `dmg` (no `zip`): the .zip is a large duplicate the app doesn't need today. Re-add `zip`
+  # here IF/when macOS auto-update (electron-updater) is wired in — it updates from the .zip, not
+  # the .dmg. Dropping it also stops the redundant *-mac.zip + *.blockmap release assets.
+  target: [dmg]
+  category: public.app-category.medical
+  # CURRENT (no Apple account): electron-builder skips its own signing, then build/afterPack.cjs
+  # ad-hoc signs the .app. Result on the recipient's Mac = the softer "could not verify" prompt
+  # (offers Open Anyway) instead of "damaged". If macOS still blocks it after download, the user
+  # can clear the quarantine flag: xattr -dr com.apple.quarantine "/Applications/Brainana Viewer.app"
+  identity: null
+  #
+  # LATER — friction-free distribution (double-click opens, no prompt). Requires a paid Apple
+  # Developer ID ($99/yr). Steps: (1) remove `identity: null` above and delete the afterPack hook
+  # (real signing replaces it); (2) uncomment below and fill in your identity + Team ID;
+  # (3) create apps/viewer/build/entitlements.mac.plist (a standard Electron hardened-runtime
+  # plist); (4) provide notarization creds via env (APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD,
+  # APPLE_TEAM_ID) or a notarytool keychain profile. Docs: https://electron.build/code-signing-mac
+  # identity: "Developer ID Application: Your Name (TEAMID)"
+  # hardenedRuntime: true
+  # gatekeeperAssess: false
+  # entitlements: apps/viewer/build/entitlements.mac.plist
+  # entitlementsInherit: apps/viewer/build/entitlements.mac.plist
+  # notarize:
+  #   teamId: TEAMID
+
+win:
+  target: [nsis]

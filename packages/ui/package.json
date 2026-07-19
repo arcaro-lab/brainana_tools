@@ -1,0 +1,11 @@
+{
+  "name": "@brainana/ui",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared, framework-free UI layer for brainana vis tools: the design-token theme (theme.css + self-hosted fonts), the h() DOM helper, and generic components (colorbar, slider, range control, legend). No domain knowledge.",
+  "//exports": "Subpaths resolve to raw source (.ts / .css / .woff2). theme.css is the single source of design tokens — import it before any app stylesheet.",
+  "exports": {
+    "./*": "./*"
+  }
+}

@@ -1,0 +1,672 @@
+/* Viewer-specific layout + component styles. Design TOKENS + fonts live in
+   @brainana/ui/theme.css, which main.ts imports BEFORE this file. */
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+/* Paint the root canvas with the theme background so nothing else can ever show through
+   below #app during the fullscreen viewport-height transition (first-paint amber edge). */
+html { background: var(--bg); }
+body {
+  font: 13px/1.5 var(--font);
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+}
+/* 100dvh (dynamic viewport height) tracks the *visible* viewport through the fullscreen
+   transition, so #app always exactly fills it — no first-paint gap / stale-layout strip. */
+#app { height: 100dvh; display: flex; flex-direction: column; }
+
+/* ---------- top bar ---------- */
+/* 2-row × 4-column grid; children are appended column-major (grid-auto-flow: column). */
+.toolbar {
+  display: grid; grid-template-rows: auto auto; grid-auto-flow: column;
+  justify-content: start; align-items: center; column-gap: var(--sp-6); row-gap: 2px;
+  padding: 5px var(--sp-6); border-bottom: 1px solid var(--border);
+  background: linear-gradient(var(--elev), var(--panel)); flex: 0 0 auto;
+}
+.tb-cell { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; flex-wrap: wrap; }
+/* Marker cluster packs 3 controls (checkbox · size · mode) in one cell — widen the internal gap so
+   they read as clearly separated, matching the spacing between other toolbar clusters. */
+.tb-cell.marker-controls { gap: var(--sp-6); }
+/* Compact controls inside the toolbar so each of the two rows stays short (side panels unaffected). */
+.toolbar select,
+.toolbar input[type="text"],
+.toolbar input[type="number"] { padding: 1px var(--sp-2); font-size: var(--fs-1); }
+.toolbar .primary,
+.toolbar .ghost,
+.toolbar .panel-btn { padding: 0 10px; }
+.toolbar .view-btn { padding: 1px 5px; }
+.toolbar .layout-btn { padding: 1px 3px; }
+.toolbar .slider-field { margin-bottom: 0; }
+.toolbar .slider-row input[type="range"] { height: 13px; }
+.toolbar .slider-num { padding: 0 3px; width: 44px; }
+/* Full-height hairline separating the toolbar into logical clusters (mirrors the info-panel seams).
+   Spans both grid rows so it reads as one vertical rule between column groups. */
+.tb-divide { grid-row: 1 / 3; align-self: stretch; width: 1px; background: var(--border); margin: -5px 0; }
+/* A toolbar cell that spans both rows (e.g. the montage layouts, centred right of vol/surf). */
+.tb-span { grid-row: 1 / 3; align-self: center; }
+.views { display: flex; }
+.view-btn { position: relative; background: var(--panel-2); border: 1px solid var(--border); color: var(--text); padding: var(--sp-1) 6px; border-radius: 0; margin-left: -1px; cursor: pointer; font-size: var(--fs-1); transition: border-color var(--dur) var(--ease), color var(--dur) var(--ease), background var(--dur) var(--ease); }
+.views .view-btn:first-child { border-radius: var(--r-sm) 0 0 var(--r-sm); margin-left: 0; }
+.views .view-btn:last-child { border-radius: 0 var(--r-sm) var(--r-sm) 0; }
+.view-btn:hover, .view-btn.active { z-index: 1; }
+.view-btn:hover { border-color: var(--accent); color: var(--accent-2); }
+.view-btn.active { border-color: var(--accent); color: var(--accent-2); background: var(--accent-tint); }
+select.narrow { width: 96px; }
+.brand { font-weight: 700; letter-spacing: -0.01em; display: flex; align-items: center; gap: var(--sp-3); }.badge { font-size: var(--fs-xs); padding: 1px var(--sp-2); border: 1px solid var(--border-2); border-radius: var(--r-pill); color: var(--muted); }
+.tb-field { display: flex; align-items: center; gap: var(--sp-2); color: var(--muted); }
+.tb-field.inline > span { color: var(--muted); }
+.layer-selectors { display: flex; align-items: center; gap: var(--sp-5); }
+.vol-opacity { width: 90px; }
+.montage { display: flex; }
+.layout-btn { position: relative; width: auto; padding: var(--sp-1) 4px; background: var(--panel-2); border: 1px solid var(--border); color: var(--muted); border-radius: 0; margin-left: -1px; cursor: pointer; transition: border-color var(--dur) var(--ease), color var(--dur) var(--ease), background var(--dur) var(--ease); }
+.montage .layout-btn:first-child { border-radius: var(--r-sm) 0 0 var(--r-sm); margin-left: 0; }
+.montage .layout-btn:last-child { border-radius: 0 var(--r-sm) var(--r-sm) 0; }
+.layout-btn:hover:not(.active), .layout-btn.active { z-index: 1; }
+.layout-btn:hover:not(.active) { border-color: var(--border-2); color: var(--accent-2); }
+.layout-btn.active { color: var(--accent-2); border-color: var(--accent); background: var(--accent-tint); }
+/* Fixed glyph height (not stretched to button width) so the layout group reads at the same scale
+   as the text view buttons. Tune this one value if the icons feel large/small. */
+.layout-btn svg { display: block; width: auto; height: 15px; fill: currentColor; opacity: 0.55; }
+.layout-btn:hover:not(.active) svg, .layout-btn.active svg { opacity: 1; }
+/* Toolbar category tabs: a segmented bar; the active tab carries an amber underline. */
+.panels { display: flex; gap: var(--sp-1); flex-wrap: wrap; }
+.panel-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; height: var(--ctl-h); line-height: 1; background: var(--panel-2); border: 1px solid var(--border); color: var(--text); padding: 0 11px; border-radius: var(--r-md); cursor: pointer; text-transform: uppercase; letter-spacing: .06em; font-size: 12px; font-weight: 600; transition: border-color var(--dur) var(--ease), color var(--dur) var(--ease), background var(--dur) var(--ease); }
+.panel-btn:hover:not(:disabled):not(.active) { border-color: var(--border-2); color: var(--accent-2); }
+.panel-btn.active { border-color: var(--accent); color: var(--accent-2); background: var(--accent-tint); }
+.panel-btn.active::after {
+  content: ''; position: absolute; left: 9px; right: 9px; bottom: -1px; height: 2px;
+  border-radius: var(--r-pill); background: var(--accent);
+}
+.panel-btn:disabled { opacity: 0.4; cursor: default; }
+.status { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+select, input[type="text"], input[type="password"], input[type="number"] {
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--r-md);
+  color: var(--text); height: var(--ctl-h); padding: 0 var(--sp-3); font: inherit;
+  transition: border-color var(--dur) var(--ease);
+}
+/* Coordinates read-out — pinned ABOVE the generic input rule (attribute selectors out-rank a
+   bare class) so the unified control height never grows it. Frozen to its current look. */
+input.coord-num { height: 17px; padding: var(--sp-2) var(--sp-3); }
+select:hover, input[type="text"]:hover, input[type="password"]:hover, input[type="number"]:hover { border-color: var(--border-2); }
+input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px; }
+button { font: inherit; }
+/* Buttons are height-driven (like selects/inputs) with line-height:1, so a button and a same-tier
+   select render at exactly --ctl-h and the text sits tight + centered — not inflated by the
+   inherited 1.5 line-height. Horizontal padding stays per-button; vertical is owned by height. */
+.ghost { display: inline-flex; align-items: center; justify-content: center; height: var(--ctl-h); line-height: 1; white-space: nowrap; background: transparent; border: 1px solid var(--border-2); color: var(--text); padding: 0 11px; border-radius: var(--r-md); cursor: pointer; transition: border-color var(--dur) var(--ease), color var(--dur) var(--ease); }
+.ghost:hover { border-color: var(--accent); color: var(--accent-2); }
+/* Primary action (e.g. the toolbar "Dataset" button): a flat amber fill, no gradient/shadow. */
+.primary { display: inline-flex; align-items: center; justify-content: center; height: var(--ctl-h); line-height: 1; white-space: nowrap; flex: 0 0 auto; background: var(--accent); border: 1px solid var(--accent); color: var(--accent-ink); padding: 0 13px; border-radius: var(--r-md); cursor: pointer; font-weight: 600; transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease); }
+.primary:hover { background: var(--accent-2); border-color: var(--accent-2); }
+/* ---------- crafted range slider (replaces the OS-default look) ---------- */
+input[type="range"] {
+  -webkit-appearance: none; appearance: none; width: 100%; height: 18px;
+  background: transparent; cursor: pointer; margin: 0;
+}
+input[type="range"]:disabled { cursor: default; opacity: 0.45; }
+/* WebKit / Blink */
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px; border-radius: var(--r-pill);
+  background: var(--panel-2); border: 1px solid var(--border);
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 14px; height: 14px; margin-top: -6px; border-radius: 50%;
+  background: var(--accent); border: 2px solid var(--panel);
+  box-shadow: 0 0 0 1px var(--border-2);
+  transition: box-shadow var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+input[type="range"]:hover::-webkit-slider-thumb { background: var(--accent-2); }
+input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--accent-glow); }
+input[type="range"]:disabled::-webkit-slider-thumb { background: var(--muted); }
+/* Firefox */
+input[type="range"]::-moz-range-track {
+  height: 4px; border-radius: var(--r-pill);
+  background: var(--panel-2); border: 1px solid var(--border);
+}
+input[type="range"]::-moz-range-progress { height: 4px; border-radius: var(--r-pill); background: var(--accent); }
+input[type="range"]::-moz-range-thumb {
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--accent); border: 2px solid var(--panel);
+  box-shadow: 0 0 0 1px var(--border-2);
+  transition: box-shadow var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+input[type="range"]:hover::-moz-range-thumb { background: var(--accent-2); }
+input[type="range"]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px var(--accent-glow); }
+input[type="range"]:disabled::-moz-range-thumb { background: var(--muted); }
+input[type="range"]:focus { outline: none; }
+
+.grow { width: 100%; }
+.spacer { flex: 1; }
+.muted { color: var(--muted); }
+.error { color: var(--danger); }
+.ok { color: var(--ok); }
+.msg { min-height: 1em; font-size: var(--fs-1); color: var(--muted); }
+
+/* ---------- content row: holds the dashboard ---------- */
+/* The underlay rail now lives inside the dashboard grid (col 1 / row 1) so the bottom info panel
+   spans under it to the far-left edge; this wrapper just flexes the dashboard to fill the height. */
+.content-row { flex: 1 1 auto; min-height: 0; display: flex; }
+.content-row > .dashboard { min-width: 0; }
+
+/* ---------- dashboard grid ---------- */
+.dashboard {
+  position: relative; flex: 1 1 auto; min-height: 0;
+  display: grid;
+  /* col 1 = underlay rail (spans the viewer row only); the info panel spans 1/-1, so it reaches
+     under the rail to the far-left edge. --rail-width collapses to 0 when no base volume is loaded.
+     --rail-w is the rail's base width (draggable via .rail-resizer); the Coordinates column just
+     shares the same 168px starting value, but the two resize independently. */
+  --rail-w: 168px;
+  grid-template-columns: var(--rail-width, var(--rail-w)) minmax(0, 1fr) var(--legend-width);
+  grid-template-rows: minmax(0, 1fr) var(--info-height);
+  gap: 1px; background: var(--border);
+}
+.dashboard:has(> .vol-rail[hidden]) { --rail-width: 0px; }
+
+/* ---------- underlay (base-volume) rail ---------- */
+/* Grid-placed in col 1 / row 1, so it stops at the top of the info panel (row 2) rather than
+   running the full height. overflow-y:auto owns any content taller than the viewer row. */
+.vol-rail {
+  grid-column: 1; grid-row: 1;
+  display: flex; flex-direction: column; gap: var(--sp-4);
+  padding: 8px; overflow-y: auto; border-right: 1px solid var(--border); background: var(--panel);
+}
+/* display:flex above out-ranks the UA [hidden] rule, so hide explicitly on the welcome screen. */
+.vol-rail[hidden] { display: none; }
+.vol-rail-head { display: flex; align-items: center; justify-content: space-between; }
+.vol-rail-title { font-size: var(--fs-sm); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+/* Drop .field's margin-bottom so rail gap alone owns vertical spacing between slider rows. */
+.vol-rail .slider-field { margin-bottom: 0; }
+/* Pin a uniform label column so slider tracks and number boxes share one vertical edge.
+   Specificity must beat the later `.slider-field > .slider-label` rule. */
+.vol-rail .slider-field > .slider-label { flex: 0 0 52px; }
+/* Number boxes for bri/con/zoom sliders. */
+.vol-rail input.slider-num { flex: 0 0 auto; width: 44px; text-align: right; }
+/* Vol-rail display/clip: shared 3-col grid — row label | min/max span | number input. */
+.vol-dc-grid {
+  display: grid;
+  grid-template-columns: 52px auto 1fr;
+  column-gap: var(--sp-2);
+  row-gap: var(--sp-1);
+  align-items: center;
+}
+.vol-dc-label { font-size: var(--fs-1); color: var(--muted); text-align: right; padding-right: 4px; }
+.vol-dc-row { display: contents; }
+.vol-dc-mm { font-size: var(--fs-sm); color: var(--muted); white-space: nowrap; }
+.vol-dc-grid input.range-num { width: 100%; flex: none; }
+/* Color display: shared 3-col grid for display + clip rows (label | min-side | max-side). */
+.display-clip-grid {
+  display: grid;
+  grid-template-columns: 44px 1fr 1fr;
+  column-gap: var(--sp-2);
+  row-gap: var(--sp-2);
+  align-items: start;
+}
+.dcg-label { font-size: var(--fs-1); color: var(--muted); text-align: right; padding-right: 4px; line-height: 22px; }
+/* Crosshair + AP/SI/LR toggles, relocated from the top bar. */
+.vol-rail-toggles { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-2); padding-top: var(--sp-3); border-top: 1px solid var(--border); }
+.viewer-area {
+  position: relative;
+  grid-column: 2; grid-row: 1;
+  display: grid; grid-template-columns: minmax(285px, 35%) minmax(0, 65%);
+  gap: 1px; background: var(--border); min-height: 0;
+}
+/* overflow:hidden clips the panel to its grid cell so tall content never intrudes the info panel. */
+.atlas-legend { position: relative; grid-column: 3; grid-row: 1; background: var(--panel); padding: 10px 10px 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+/* Splitter sitting on the seam between the viewer area and the side panel. Child of `main`, so
+   it stacks above the surface canvas and stays on the boundary as --legend-width changes. */
+.panel-resizer {
+  position: absolute; top: 0; bottom: var(--info-height);
+  right: var(--legend-width); transform: translateX(50%);
+  width: 10px; z-index: 40; cursor: col-resize; touch-action: none;
+}
+.panel-resizer::after {
+  content: ''; position: absolute; top: 0; bottom: 0; left: 50%; width: 2px;
+  transform: translateX(-50%); background: transparent;
+}
+.panel-resizer:hover::after, .panel-resizer:active::after { background: var(--accent); }
+/* Splitter on the underlay rail's right edge; spans the viewer row (stops at the info panel).
+   Sits at the rail width (--rail-w) from the dashboard's left edge and follows drags live. */
+.rail-resizer {
+  position: absolute; top: 0; bottom: var(--info-height);
+  left: var(--rail-w); transform: translateX(-50%);
+  width: 10px; z-index: 40; cursor: col-resize; touch-action: none;
+}
+.rail-resizer::after {
+  content: ''; position: absolute; top: 0; bottom: 0; left: 50%; width: 2px;
+  transform: translateX(-50%); background: transparent;
+}
+.rail-resizer:hover::after, .rail-resizer:active::after { background: var(--accent); }
+/* No rail loaded → no seam to drag. */
+.dashboard:has(> .vol-rail[hidden]) .rail-resizer { display: none; }
+.info-resizer {
+  position: absolute; left: 0; right: var(--legend-width);
+  bottom: var(--info-height); transform: translateY(50%);
+  height: 8px; z-index: 40; cursor: row-resize; touch-action: none;
+}
+.info-resizer::after {
+  content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 2px;
+  transform: translateY(-50%); background: transparent;
+}
+.info-resizer:hover::after, .info-resizer:active::after { background: var(--accent); }
+.legend-title { font-size: var(--fs-2); font-weight: 600; }
+.legend-actions { display: flex; align-items: center; gap: var(--sp-1); margin-bottom: var(--row-gap); flex-wrap: wrap; }
+.legend-count { margin-left: auto; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.ghost.sm { padding: 3px 7px; font-size: var(--fs-sm); }
+.legend-search { width: 100%; margin-bottom: var(--row-gap); }
+.legend-scroll { position: relative; flex: 1 1 auto; overflow-y: auto; min-height: 0; }
+.legend-rows { position: absolute; top: 0; left: 0; right: 0; will-change: transform; }
+.legend-row {
+  display: grid; grid-template-columns: 14px 14px 38px minmax(0, 1fr) auto; align-items: center; gap: var(--sp-2);
+  height: var(--ctl-h); width: 100%; padding: 0 4px; background: none; border: 0; color: var(--text);
+  text-align: left; cursor: pointer; font: inherit;
+}
+.legend-row:hover { background: var(--panel-2); }
+.legend-row.hidden-roi { opacity: 0.45; }
+.legend-checkbox { color: var(--accent); font-size: var(--fs-sm); text-align: center; }
+.legend-swatch { width: 12px; height: 12px; border-radius: var(--r-xs); border: 1px solid rgba(255,240,210,0.15); }
+.legend-id { font-size: var(--fs-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
+.legend-label { font-size: var(--fs-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* WM/CSF (negative-id) rows: present in the volume slices but clipped on the surface. */
+.legend-vol-only {
+  font-size: var(--fs-sm); color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em;
+  padding: 0 4px; border: 1px solid rgba(255,240,210,0.15); border-radius: var(--r-xs); line-height: 1.4;
+}
+
+/* Docked category picker: sits at the top of the side panel (no longer a floating overlay). */
+.side-picker { flex: 0 0 auto; }
+.side-panel { width: 100%; padding: 2px 0 11px; margin-bottom: 9px; }
+.side-panel[hidden] { display: none; }
+/* Prominent bold panel title (function / atlas / morphology) — kept distinct from the muted
+   small-caps sub-headers below; only its spacing is normalized to the shared scale. */
+.side-panel-head { font-weight: 700; margin-bottom: var(--sp-3); text-transform: uppercase; letter-spacing: .06em; }
+/* Content below the docked picker; exactly one slot is visible at a time (ROI legend / func / morph). */
+.side-content { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.side-slot { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.side-slot[hidden] { display: none; }
+.side-caption { font-size: var(--fs-1); padding: 2px 0; }
+.chip-row { display: flex; flex-wrap: wrap; gap: var(--sp-1); margin-bottom: var(--row-gap); }
+.chip { display: inline-flex; align-items: center; justify-content: center; height: var(--ctl-h); line-height: 1; background: var(--panel-2); border: 1px solid var(--border); color: var(--text); padding: 0 9px; border-radius: var(--r-pill); cursor: pointer; font-size: var(--fs-1); transition: border-color var(--dur) var(--ease), color var(--dur) var(--ease), background var(--dur) var(--ease); }
+.chip:hover:not(.active) { border-color: var(--border-2); color: var(--accent-2); }
+/* One selection language everywhere: tinted fill + accent border + accent-2 text. */
+.chip.active { border-color: var(--accent); background: var(--accent-tint); color: var(--accent-2); }
+/* One column per subsection; Atlas widest, Function widened so labels never truncate. */
+/* Column 1..4 widths are draggable (--info-cN, set by the seam handles); the last column flexes. */
+.info-panel {
+  grid-column: 1 / -1; grid-row: 2; background: var(--panel);
+  position: relative;
+  display: grid; min-height: 0;
+  grid-template-columns:
+    var(--info-c1, 168px)   /* Coordinates — starts at the rail width, but resizes independently */
+    var(--info-c2, 500px)   /* Atlas */
+    var(--info-c3, 210px)   /* Surface     */
+    var(--info-c4, 340px)   /* Function    */
+    minmax(150px, 1fr);     /* Visual field */
+}
+/* Draggable seam handles floating over the column borders. */
+.info-vresizer { position: absolute; top: 0; bottom: 0; width: 9px; transform: translateX(-50%); z-index: 30; cursor: col-resize; touch-action: none; }
+.info-vresizer::after { content: ''; position: absolute; top: 0; bottom: 0; left: 50%; width: 2px; transform: translateX(-50%); background: transparent; }
+.info-vresizer:hover::after, .info-vresizer:active::after { background: var(--accent); }
+/* Column = a flex box: a fixed (non-scrolling) header + an `.info-scroll` region that owns the
+   overflow. The column itself never scrolls, so the title is structurally outside the scroll flow
+   and stays rock-steady (no sticky re-pin jitter). */
+.info-col { background: var(--panel); display: flex; flex-direction: column; min-height: 0; overflow: hidden; padding: 0; min-width: 0; border-right: 1px solid var(--border); }
+.info-col:last-child { border-right: 0; }
+/* The scrolling region under the fixed header — the only part of a column that scrolls. */
+.info-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 0 16px 12px; }
+/* Unified muted small-caps sub-header spec (matches .color-display-head / .group-head). Fixed
+   (flex-none) header at the top of the column with a --panel background. */
+.info-col > h3 { flex: 0 0 auto; background: var(--panel); margin: 0 0 var(--sp-2); padding: 10px 16px 6px; font-size: var(--fs-sm); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; line-height: 1.2; color: var(--muted); white-space: nowrap; }
+/* Visual-field column: the whole header (title + neighborhood control) is the fixed unit. */
+.info-col > .vf-header { flex: 0 0 auto; background: var(--panel); margin: 0 0 var(--sp-2); padding: 10px 16px 6px; }
+.info-col > .vf-header h3 { margin: 0; padding: 0; background: none; font-size: var(--fs-sm); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; line-height: 1.2; color: var(--muted); white-space: nowrap; }
+
+/* Label:value columns (Coordinates / Surface / Function): a 2-column grid, no truncation. */
+.info-col dl { margin: 0; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 5px 12px; font-size: var(--fs-1); line-height: 1.35; }
+.info-col dt { color: var(--muted); text-align: right; }
+.info-col dd { margin: 0; color: var(--text); overflow-wrap: anywhere; }
+/* 4-column paired variant: dt dd dt dd per row; single-pair rows span the last 3 cols. */
+.info-col dl.dl-paired { grid-template-columns: max-content minmax(0,1fr) max-content minmax(0,1fr); }
+.info-col dl.dl-paired .dl-span { grid-column: span 3; }
+/* Atlas rows: atlas name · id · region label (gold), zebra-striped. */
+.atlas-report-row {
+  display: grid; grid-template-columns: 74px 64px minmax(120px, 1fr); align-items: baseline; gap: var(--sp-3);
+  padding: 2px 4px; border-radius: var(--r-xs); font-size: var(--fs-sm);
+}
+.atlas-report-row:nth-child(odd) { background: rgba(255,255,255,.025); }
+.atlas-report-name { color: var(--muted); font-weight: 600; }
+.atlas-report-id { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+.atlas-report-label { color: var(--label-gold); overflow-wrap: anywhere; }
+.atlas-report-label.unknown { color: var(--muted); }
+/* Short `name`-column label shown before the full name (e.g. "ACgG · anterior cingulate gyrus"). */
+.atlas-report-short { color: var(--muted); font-weight: 600; }
+
+/* Visual field header: title left, neighborhood control right. */
+.vf-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--sp-3); }
+.vf-header h3 { margin: 0; }
+.neighborhood-control { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: var(--fs-xs); }
+/* Micro-control exception: this tiny 3×3×3 picker stays smaller than --ctl-h. */
+.neighborhood-control select { height: auto; width: 36px; padding: 3px 4px; font-size: var(--fs-xs); }
+.vf-canvas { display: block; width: min(100%, calc(var(--info-height) - 60px)); aspect-ratio: 1; height: auto; margin: 2px auto 0; }
+.field.inline { flex-direction: row; align-items: center; gap: 6px; }
+
+.slice-pane, .surface-pane { position: relative; background: #000; min-height: 0; overflow: hidden; }
+.nv-canvas { width: 100%; height: 100%; display: block; }
+.orientation-widget {
+  position: absolute; right: 10px; bottom: 10px;
+  width: 96px; height: 96px; pointer-events: none;
+}
+.orientation-origin { fill: var(--muted); }
+.orientation-line { stroke: var(--border-2); stroke-width: 1.2; }
+.orientation-line.orientation-near { stroke: var(--muted); }
+.orientation-axis { fill: var(--muted); font-size: 12.5px; font-weight: 600; text-anchor: middle; dominant-baseline: middle; }
+.orientation-axis.orientation-near { fill: var(--text); }
+
+/* Montage layouts — the surface pane is merged into the montage.
+   grid: NiiVue draws the 3 planes in a 2×2, leaving the bottom-right quadrant empty; the
+   surface pane fills that quadrant so all four panels are the same size. */
+.dashboard[data-layout="grid"] .viewer-area {
+  grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 0;
+}
+.dashboard[data-layout="grid"] .slice-pane { grid-column: 1 / 3; grid-row: 1 / 3; }
+.dashboard[data-layout="grid"] .surface-pane { grid-column: 2 / 3; grid-row: 2 / 3; }
+
+/* row: surface on top (full width), the 3 planes in a row below. */
+.dashboard[data-layout="row"] .viewer-area {
+  grid-template-columns: 1fr; grid-template-rows: 1fr 1fr;
+}
+.dashboard[data-layout="row"] .surface-pane { grid-column: 1; grid-row: 1; }
+.dashboard[data-layout="row"] .slice-pane { grid-column: 1; grid-row: 2; }
+
+/* column: the previous side-by-side — the 3 planes stacked in a column on the left,
+   surface on the right. */
+.dashboard[data-layout="column"] .viewer-area {
+  grid-template-columns: minmax(285px, 35%) minmax(0, 65%); grid-template-rows: minmax(0, 1fr);
+}
+.dashboard[data-layout="column"] .slice-pane { grid-column: 1; grid-row: 1; }
+.dashboard[data-layout="column"] .surface-pane { grid-column: 2; grid-row: 1; }
+
+/* vol/surf checkbox off → hide that pane; the remaining pane fills the viewer area regardless of
+   the active montage layout. The :not() guard boosts specificity above the [data-layout] rules. */
+.dashboard[data-vol="off"] .slice-pane { display: none; }
+.dashboard[data-surf="off"] .surface-pane { display: none; }
+.dashboard[data-vol="off"]:not([data-surf="off"]) .viewer-area,
+.dashboard[data-surf="off"]:not([data-vol="off"]) .viewer-area {
+  grid-template-columns: 1fr; grid-template-rows: 1fr;
+}
+.dashboard[data-vol="off"]:not([data-surf="off"]) .surface-pane { grid-column: 1; grid-row: 1; }
+.dashboard[data-surf="off"]:not([data-vol="off"]) .slice-pane { grid-column: 1; grid-row: 1; }
+
+/* Resizer handles are in the DOM from mount-time but must not be interactive until data loads.
+   pointer-events:none prevents both cursor changes and :hover (which reveals the amber line). */
+.dashboard:not(.monkey-loaded) .panel-resizer,
+.dashboard:not(.monkey-loaded) .info-resizer,
+.dashboard:not(.monkey-loaded) .info-vresizer {
+  pointer-events: none;
+}
+
+/* placeholder until a monkey loads */
+.monkey-placeholder {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  background: var(--bg); color: var(--muted); font-size: 15px; z-index: 5;
+}
+@keyframes placeholder-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.dashboard.monkey-loaded .monkey-placeholder { display: none; }
+.placeholder-content {
+  display: flex; flex-direction: column; align-items: center; gap: 0.75rem;
+  width: min(92vw, 100%); overflow: hidden;
+  animation: placeholder-fade-in 400ms ease-out;
+}
+.placeholder-text {
+  margin: 0; font-size: 15px; color: var(--muted);
+}
+.monkey-ascii {
+  font-size: 1px; line-height: 1.1; letter-spacing: 0;
+  color: var(--muted); margin: 0; user-select: none;
+  font-family: monospace; white-space: pre;
+}
+
+/* loading hint shown while a subject renders (Req 17) */
+.loading-overlay {
+  position: absolute; inset: 0; z-index: 8;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-5);
+  background: color-mix(in srgb, var(--bg) 82%, transparent); color: var(--text); font-size: var(--fs-2);
+}
+.loading-overlay[hidden] { display: none; }
+.loading-text.error { color: var(--danger); max-width: 60%; text-align: center; }
+.spinner {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 3px solid var(--border); border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+.loading-overlay.is-error .spinner { display: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+/* Brief accent flash drawing the eye to the monkey picker after the Datasets dialog closes. */
+#monkey-select.pulse { animation: pulse-ring 0.6s var(--ease) 2; }
+@keyframes pulse-ring { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 50% { box-shadow: 0 0 0 3px var(--accent-glow); } }
+
+/* ---------- overlay dialogs ---------- */
+.overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: grid; place-items: center; z-index: 50; }
+.dialog { background: var(--panel); border: 1px solid var(--border-2); border-radius: var(--r-lg); padding: var(--sp-6); width: min(680px, 92vw); max-height: 88vh; overflow: auto; box-shadow: var(--shadow); }
+.dialog-head { display: flex; align-items: center; gap: var(--sp-4); margin-bottom: var(--sp-5); }
+.dialog-head h2 { margin: 0; font-size: var(--fs-3); }
+/* Footer action row: the next-step primary button pinned bottom-right (mirrors .dialog-head). */
+.dialog-foot { display: flex; align-items: center; gap: var(--sp-4); margin-top: var(--sp-6); }
+.source-list { margin-bottom: var(--sp-6); }
+/* Datasets render as a single-framed table with subtle zebra rows — quieter than the old
+   per-row bordered boxes. Columns: type badge / derived name / editable custom label / remove. */
+.dataset-table { width: 100%; table-layout: fixed; border-collapse: collapse; border: 1px solid var(--border-2); border-radius: var(--r-sm); overflow: hidden; }
+.dataset-table th { position: relative; text-align: left; font-size: var(--fs-xs); text-transform: uppercase; color: var(--muted); font-weight: 500; padding: var(--sp-2) var(--sp-3); background: var(--panel-2); border-bottom: 1px solid var(--border); }
+.dataset-table td { padding: var(--sp-2) var(--sp-3); vertical-align: middle; }
+.dataset-table tbody tr:nth-child(even) { background: var(--panel-2); }
+.dataset-table .ds-name { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.dataset-table .label-input { width: 100%; }
+.dataset-table .ds-actions { white-space: nowrap; text-align: right; }
+/* Draggable seam on a header cell's right edge — resizes the column to its left (mirrors .info-vresizer). */
+.col-grip { position: absolute; top: 0; right: -4px; width: 9px; height: 100%; cursor: col-resize; touch-action: none; z-index: 1; }
+.col-grip::after { content: ''; position: absolute; right: 4px; top: 0; width: 2px; height: 100%; background: transparent; transition: background var(--dur) var(--ease); }
+.col-grip:hover::after, .col-grip:active::after { background: var(--accent); }
+/* Local and Remote stack as full-width rows (one above the other). */
+.source-forms { display: flex; flex-direction: column; gap: var(--sp-5); }
+.source-form { border: 1px solid var(--border); border-radius: var(--r-md); padding: var(--sp-5); }
+.source-form h3 { margin: 0 0 var(--sp-3); font-size: var(--fs-1); text-transform: uppercase; color: var(--muted); }
+/* Remote connection: a "recent" recall row on top, a 2-column field grid, then Connect bottom-right. */
+.conn-recall { margin-bottom: var(--sp-4); }
+.conn-recall > .muted { flex: 0 0 auto; font-size: var(--fs-sm); }
+/* Persistent "connected to user@host" indicator, shown between the connect row and the add row. */
+.conn-banner { margin: var(--sp-2) 0; }
+/* Keep the two forms' primary "add" buttons a consistent width so their columns line up, and give
+   the small recall/disconnect buttons equal width so they stop jittering. Scoped to the dialog. */
+.source-form .primary { min-width: 64px; }
+.source-form .ghost.sm { min-width: 56px; }
+.port-input { max-width: var(--num-w); }
+.port-field { flex: 0 0 auto; }
+.field { display: flex; flex-direction: column; gap: var(--field-gap); margin-bottom: var(--row-gap); }
+.field > span { font-size: var(--fs-sm); color: var(--muted); }
+.row { display: flex; gap: var(--sp-3); align-items: center; }
+.row .field { flex: 1; }
+/* Square folder-icon button beside the path input; height-driven to --ctl-h so it lines up with the
+   inputs and buttons on its row (matches .ghost's outline treatment). */
+.icon-btn { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: var(--ctl-h); height: var(--ctl-h); padding: 0; background: transparent; border: 1px solid var(--border-2); border-radius: var(--r-md); color: var(--text); cursor: pointer; transition: border-color var(--dur) var(--ease), color var(--dur) var(--ease); }
+.icon-btn:hover { border-color: var(--accent); color: var(--accent-2); }
+/* Folder-picker overlay (layered over the Datasets dialog). */
+.fs-picker { width: min(540px, 92vw); }
+/* Clickable breadcrumb path bar: ancestor segments separated by ›, wraps on long paths. */
+.fs-crumb { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: var(--sp-1) var(--sp-2); margin-bottom: var(--sp-4); border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--panel-2); }
+.fs-seg { background: transparent; border: 0; padding: 2px 6px; border-radius: var(--r-sm); color: var(--accent-2); cursor: pointer; font: inherit; transition: background var(--dur) var(--ease); }
+.fs-seg:hover { background: var(--panel); }
+.fs-seg.current { color: var(--text); cursor: default; }
+.fs-seg.current:hover { background: transparent; }
+.fs-sep { color: var(--muted); }
+.fs-list { display: flex; flex-direction: column; gap: 0; max-height: 48vh; overflow: auto; margin-bottom: var(--sp-5); }
+.fs-list.loading { opacity: 0.5; }
+/* Tight, table-like folder rows: icon column + ellipsized name, no per-row border/radius. */
+.fs-entry { display: flex; align-items: center; gap: var(--sp-3); text-align: left; width: 100%; background: transparent; border: 0; border-radius: 0; padding: 3px var(--sp-3); line-height: 1.3; color: var(--text); cursor: pointer; transition: background var(--dur) var(--ease); }
+.fs-entry:hover { background: var(--panel-2); }
+.fs-ico { flex: 0 0 auto; display: inline-flex; color: var(--muted); }
+.fs-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badge.local { color: var(--ok); }
+.badge.remote { color: var(--warn); }
+
+.gate { max-width: 520px; margin: 80px auto; text-align: center; padding: 20px; }
+.gate h1 { font-size: 22px; }
+
+/* ---------- Refined Instrument: numbers & ids in the monospace face (tabular) ---------- */
+/* Coordinates, voxel indices, atlas ids, thresholds and status all read as instrument data. */
+.info-col dd, .legend-id, .legend-count, .atlas-report-id, .atlas-report-name,
+.badge, .status, .neighborhood-control select,
+.range-num, .colorbar-tick, .cmap-tag {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- side-panel control groups (collapsible sections) ---------- */
+.group { border-top: 1px solid var(--border); padding: var(--sp-3) 0; }
+.group:first-of-type { border-top: 0; }
+.group-head {
+  display: flex; align-items: center; gap: var(--sp-2); width: 100%;
+  background: none; border: 0; color: var(--muted); cursor: pointer; padding: 2px 0;
+  font: inherit; font-size: var(--fs-sm); font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+}
+.group-head::before { content: '▾'; font-size: 9px; transition: transform var(--dur) var(--ease); }
+.group.collapsed .group-head::before { transform: rotate(-90deg); }
+.group-head:hover { color: var(--accent-2); }
+.group-body { display: flex; flex-direction: column; gap: var(--row-gap); padding-top: var(--row-gap); }
+.group.collapsed .group-body { display: none; }
+
+/* ---------- colormap picker ---------- */
+.cmap-picker { position: relative; }
+.cmap-trigger {
+  display: flex; align-items: center; gap: var(--sp-2); width: 100%;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--r-md);
+  color: var(--text); height: var(--ctl-h); padding: 0 var(--sp-3); cursor: pointer; text-align: left;
+  transition: border-color var(--dur) var(--ease);
+}
+.cmap-trigger:hover, .cmap-trigger.open { border-color: var(--accent); }
+.cmap-swatch {
+  flex: 0 0 auto; width: 34px; height: 14px; border-radius: var(--r-xs);
+  border: 1px solid rgba(255,240,210,.15);
+}
+.cmap-label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-1); }
+.cmap-caret { flex: 0 0 auto; color: var(--muted); font-size: 10px; }
+.cmap-pop {
+  position: absolute; z-index: 60; top: calc(100% + 4px); left: 0; right: 0;
+  max-height: 280px; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--border-2); border-radius: var(--r-md);
+  box-shadow: var(--shadow); padding: var(--sp-1);
+}
+.cmap-pop[hidden] { display: none; }
+.cmap-group { padding: var(--sp-2) var(--sp-2) 2px; font-size: var(--fs-xs); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.cmap-option {
+  display: flex; align-items: center; gap: var(--sp-2); width: 100%;
+  background: none; border: 0; border-radius: var(--r-sm); color: var(--text);
+  padding: var(--sp-1) var(--sp-2); cursor: pointer; text-align: left; font: inherit;
+}
+.cmap-option:hover { background: var(--panel-2); }
+.cmap-option.active { background: var(--accent-tint); color: var(--accent-2); }
+.cmap-tag { margin-left: auto; font-size: 9px; color: var(--muted); border: 1px solid var(--border-2); border-radius: var(--r-pill); padding: 0 5px; }
+
+/* ---------- range control ---------- */
+/* Disabled: dim both sides. */
+.range-side.is-disabled { opacity: 0.45; pointer-events: none; }
+/* Locked lower bound (continuous atlas): dim + freeze only the min side. */
+.range-side.range-side-locked { opacity: 0.45; pointer-events: none; }
+.range-side { flex: 1 1 0; display: flex; flex-direction: column; gap: var(--field-gap); min-width: 0; }
+/* `display:flex` above out-ranks the UA [hidden] rule, so hide explicitly when a side is dropped
+   (e.g. retinotopy hides its display-range sides) — otherwise it stays in the grid and reflows it. */
+.range-side[hidden] { display: none; }
+.range-cap { font-size: var(--fs-sm); color: var(--muted); display: flex; align-items: center; gap: var(--sp-1); }
+/* Editable numeric read-out for the dual range control (compact override of the generic number input). */
+/* `input.range-num` (attribute+class specificity) so this beats the generic input rule. */
+input.range-num { color: var(--text); font-size: var(--fs-sm); width: var(--num-w); padding: 0 var(--sp-1); text-align: right; }
+.range-actions { margin-bottom: 0; margin-top: 2px; }
+
+/* ---------- single slider with editable number box (label · slider · value on one row) ---------- */
+.slider-field { flex-direction: row; align-items: center; gap: var(--sp-3); }
+.slider-field > .slider-label { flex: 0 0 auto; white-space: nowrap; }
+.slider-row { flex: 1 1 auto; display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.slider-row input[type="range"] { flex: 1 1 auto; min-width: 40px; }
+/* `input.slider-num` (attribute+class specificity) so this beats the generic input rule; the box
+   then matches the unified --ctl-h height of the sibling select/dropdown. */
+input.slider-num { flex: 0 0 auto; width: var(--num-w); padding: 0 var(--sp-1); font-size: var(--fs-sm); text-align: right; }
+.slider-field.is-disabled { opacity: 0.5; }
+
+/* ---------- labelled select field (label · dropdown on one row) ---------- */
+.select-field > span { flex: 0 0 auto; }
+.select-field select { flex: 1 1 auto; min-width: 0; }
+
+/* ---------- editable crosshair coordinates (compact, matching the Atlas rows) ---------- */
+.info-col dl.coord-dl { gap: 0 10px; align-items: center; font-size: 11px; line-height: 1.25; }
+.info-col dl.coord-dl dt, .info-col dl.coord-dl dd { padding: 1px 0; }
+/* Borderless read-out that reads like the Anatomy values; the box only shows on hover/focus. */
+.coord-num {
+  width: 66px; padding: 0 3px; height: 17px; font-size: 11px; line-height: 1;
+  background: transparent; border-color: transparent;
+}
+.coord-num:hover { border-color: var(--border); }
+.coord-num:focus { background: var(--panel-2); border-color: var(--accent); }
+
+/* Toolbar variants: keep the marker size slider + mode select from collapsing/over-growing. */
+.tb-cell .slider-field { margin-bottom: 0; gap: var(--sp-2); }
+.tb-cell .slider-row { width: 54px; flex: 0 0 auto; }
+.tb-cell .select-field { margin-bottom: 0; }
+.tb-cell .select-field select { flex: 0 0 auto; width: 118px; }
+
+/* ---------- unified "Color display" section (docked at side-panel bottom) ---------- */
+/* Capped + internally scrollable so it never pushes the ROI legend off-screen or past the cell. */
+.color-dock { flex: 0 0 auto; min-height: 0; max-height: 62%; overflow-y: auto; }
+.color-display { border-top: 1px solid var(--border); padding: var(--sp-3) 0 var(--sp-1); margin-top: var(--sp-3); }
+.color-display[hidden] { display: none; }
+.color-display-title { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-3); }
+/* The header is a button that collapses the body; a caret shows the state. */
+.color-display-head {
+  display: flex; align-items: center; gap: var(--sp-2);
+  background: none; border: 0; padding: 0; cursor: pointer; font: inherit;
+  font-size: var(--fs-sm); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
+}
+.color-display-head::before { content: '▾'; font-size: 9px; transition: transform var(--dur) var(--ease); }
+.color-display.collapsed .color-display-head::before { transform: rotate(-90deg); }
+.color-display-head:hover { color: var(--accent-2); }
+.color-display-body { display: flex; flex-direction: column; gap: var(--row-gap); }
+.color-display-body .field[hidden] { display: none; }
+.color-display.collapsed .color-display-body { display: none; }
+
+/* ---------- overlay legend (bar / wheel / rings) ---------- */
+.overlay-legend { display: flex; flex-direction: column; gap: var(--sp-2); align-items: stretch; }
+.overlay-legend[hidden] { display: none; }
+.legend-head { font-size: var(--fs-xs); letter-spacing: .06em; text-transform: uppercase; }
+.legend-canvas { display: block; margin: 0 auto; }
+.legend-canvas[hidden] { display: none; }
+.legend-cap { font-size: var(--fs-xs); text-align: center; }
+.legend-cap[hidden] { display: none; }
+
+/* ---------- colorbar strip ---------- */
+.colorbar { display: flex; flex-direction: column; gap: 3px; }
+.colorbar[hidden] { display: none; }
+.colorbar-head { font-size: var(--fs-xs); letter-spacing: .06em; text-transform: uppercase; }
+.colorbar-track {
+  position: relative; height: 12px; border-radius: var(--r-xs); overflow: hidden;
+  border: 1px solid var(--border-2);
+}
+.colorbar-gradient { position: absolute; inset: 0; }
+.colorbar-clip {
+  position: absolute; top: 0; bottom: 0;
+  background: color-mix(in srgb, var(--bg) 66%, transparent);
+  backdrop-filter: saturate(.2);
+}
+.colorbar-clip.lo { left: 0; border-right: 1px solid var(--accent-2); }
+.colorbar-clip.hi { right: 0; border-left: 1px solid var(--accent-2); }
+.colorbar-clip[hidden] { display: none; }
+.colorbar-ticks { display: flex; justify-content: space-between; font-size: var(--fs-xs); color: var(--muted); }
+.colorbar-tick:nth-child(2) { color: var(--text); }

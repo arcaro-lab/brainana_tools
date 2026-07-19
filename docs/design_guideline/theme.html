@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Brainana Viewer — Refined Instrument · B · Graphite + Amber</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+/* ============================================================
+   VARIANT B — "Graphite + Amber"
+   Warm graphite neutrals · amber accent (heir to today's label-gold) ·
+   humanist sans + monospace data. Softer contrast, gentle elevation —
+   a warm lab instrument that's easy on the eyes over a long session.
+   ============================================================ */
+:root {
+  /* — surfaces (warm graphite, slight amber bias) — */
+  --bg:        #14120d;
+  --panel:     #1c1913;
+  --panel-2:   #241f17;
+  --elev:      #2e2818;
+  /* — ink — */
+  --text:      #ece6d8;
+  --muted:     #a1957f;
+  /* — line — */
+  --border:    #2b2518;
+  --border-2:  #3a3221;
+  /* — accent — */
+  --accent:    #e6a13a;
+  --accent-2:  #f4c877;
+  --accent-ink:#241700;
+  --accent-glow: rgba(230,161,58,.16);
+  /* — semantic (separate from accent) — */
+  --gold:      #f1d272;
+  --danger:    #e5675a;
+  --ok:        #8bbf6e;
+  --warn:      #d9a24c;
+  /* — type — */
+  --font: "Source Sans 3", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* — geometry (softer, larger radii + real elevation) — */
+  --r-sm: 6px; --r-md: 9px; --r-lg: 14px; --r-pill: 999px;
+  --shadow: 0 1px 0 rgba(255,240,210,.04), 0 10px 26px -14px rgba(0,0,0,.7);
+  --info-height: 214px;
+  --legend-width: 264px;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  font-family: var(--font);
+  background:
+    radial-gradient(1200px 620px at 80% -10%, #26200f 0%, transparent 62%),
+    var(--bg);
+  color: var(--text);
+  font-size: 14.5px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+::selection { background: var(--accent-glow); }
+
+/* ---------- page scaffold ---------- */
+.page { max-width: 1240px; margin: 0 auto; padding: 40px 28px 96px; }
+.topnav { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding-bottom: 18px; margin-bottom: 30px; border-bottom: 1px solid var(--border); }
+.topnav .home { font-family: var(--mono); font-size: 12px; letter-spacing: .04em; color: var(--muted); }
+.topnav .spacer { flex: 1; }
+.pill-nav { display: flex; gap: 6px; }
+.pill-nav a { font-size: 12px; padding: 5px 11px; border-radius: var(--r-pill); border: 1px solid var(--border-2); color: var(--muted); }
+.pill-nav a.here { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); font-weight: 600; }
+.pill-nav a:hover { text-decoration: none; border-color: var(--accent); color: var(--text); }
+.pill-nav a.here:hover { color: var(--accent-ink); }
+
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .18em; text-transform: uppercase; color: var(--accent-2); margin: 0 0 10px; }
+h1.title { font-size: clamp(30px, 4vw, 46px); font-weight: 700; line-height: 1.05; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance; }
+h1.title .thin { color: var(--muted); font-weight: 400; }
+.lead { max-width: 68ch; color: var(--muted); font-size: 16px; margin: 0 0 8px; }
+.lead b { color: var(--text); font-weight: 600; }
+
+h2.sec { font-size: 13px; font-family: var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--muted); margin: 54px 0 16px; padding-bottom: 9px; border-bottom: 1px solid var(--border); display: flex; align-items: baseline; gap: 10px; }
+h2.sec .n { color: var(--accent); }
+
+/* ---------- token swatches ---------- */
+.tokgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(212px, 1fr)); gap: 9px; }
+.sw { display: flex; align-items: center; gap: 11px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-md); padding: 9px 11px; box-shadow: var(--shadow); }
+.sw .chip { width: 34px; height: 34px; border-radius: 7px; border: 1px solid rgba(255,240,210,.12); flex: 0 0 34px; }
+.sw .nm { display: flex; flex-direction: column; min-width: 0; }
+.sw .nm code { font-family: var(--mono); font-size: 12px; color: var(--text); font-weight: 600; }
+.sw .nm .role { font-size: 11px; color: var(--muted); }
+.sw .nm .hx { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+/* ---------- type specimen ---------- */
+.type-card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 24px 26px; box-shadow: var(--shadow); }
+.spec-display { font-size: 42px; font-weight: 700; letter-spacing: -0.015em; margin: 0 0 4px; }
+.spec-label { font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin: 0 0 20px; }
+.spec-ui { font-size: 15.5px; margin: 0 0 6px; }
+.spec-mono { font-family: var(--mono); font-size: 14px; color: var(--accent-2); font-variant-numeric: tabular-nums; }
+.spec-mono .k { color: var(--muted); }
+
+/* ---------- component demo ---------- */
+.demo { display: flex; flex-wrap: wrap; gap: 26px; align-items: flex-start; }
+.demo .col { display: flex; flex-direction: column; gap: 12px; }
+.demo .cap { font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.demo .rowline { display: flex; gap: 7px; align-items: center; flex-wrap: wrap; }
+
+.ghost { background: transparent; border: 1px solid var(--border-2); color: var(--text); padding: 6px 12px; border-radius: var(--r-md); cursor: pointer; font: inherit; }
+.ghost:hover { border-color: var(--accent); }
+.ghost.sm { padding: 3px 8px; font-size: 11px; }
+.btn-primary { background: var(--accent); color: var(--accent-ink); border: 1px solid var(--accent); padding: 6px 14px; border-radius: var(--r-md); cursor: pointer; font: inherit; font-weight: 600; }
+.btn-primary:hover { background: var(--accent-2); border-color: var(--accent-2); }
+.view-btn { background: var(--panel-2); border: 1px solid var(--border); color: var(--text); padding: 4px 9px; border-radius: var(--r-sm); cursor: pointer; font-size: 12px; }
+.view-btn:hover { border-color: var(--accent); }
+.panel-btn { background: var(--panel-2); border: 1px solid var(--border); color: var(--text); padding: 5px 11px; border-radius: var(--r-md); cursor: pointer; font: inherit; }
+.panel-btn.active { border-color: var(--accent); color: var(--accent-2); background: color-mix(in srgb, var(--accent) 12%, var(--panel-2)); }
+.panel-btn:disabled { opacity: .4; cursor: default; }
+.chip { background: var(--panel-2); border: 1px solid var(--border); color: var(--text); padding: 4px 10px; border-radius: var(--r-pill); cursor: pointer; font-size: 12px; }
+.chip.active { border-color: var(--accent); color: var(--accent-ink); background: var(--accent); font-weight: 600; }
+.badge { font-family: var(--mono); font-size: 10px; padding: 2px 8px; border: 1px solid var(--border-2); border-radius: var(--r-pill); color: var(--muted); letter-spacing: .04em; }
+.badge.local { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--border)); }
+.badge.remote { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--border)); }
+input[type="text"], select { background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--r-md); color: var(--text); padding: 6px 9px; font: inherit; }
+input[type="text"]:focus, select:focus, button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+input[type="range"] { accent-color: var(--accent); width: 150px; }
+
+.mini-legend { width: 260px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-md); padding: 8px; box-shadow: var(--shadow); }
+.legend-row { display: grid; grid-template-columns: 15px 14px 40px 1fr; align-items: center; gap: 7px; height: 24px; padding: 0 5px; border-radius: 5px; cursor: pointer; }
+.legend-row:hover { background: var(--panel-2); }
+.legend-check { color: var(--accent); font-size: 11px; text-align: center; }
+.legend-swatch { width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(255,240,210,.2); }
+.legend-id { font-family: var(--mono); font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+.legend-label { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.legend-row.off { opacity: .42; }
+dl.mini { display: grid; grid-template-columns: max-content 1fr; gap: 5px 14px; margin: 0; font-size: 12.5px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-md); padding: 12px 14px; box-shadow: var(--shadow); }
+dl.mini dt { color: var(--muted); text-align: right; }
+dl.mini dd { margin: 0; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+/* ============================================================
+   APPLIED — the viewer dashboard
+   ============================================================ */
+.applied-note { color: var(--muted); font-size: 14px; margin: 0 0 16px; max-width: 70ch; }
+.viewer-frame { height: min(80vh, 800px); min-height: 640px; border: 1px solid var(--border-2); border-radius: 16px; overflow: hidden; box-shadow: 0 34px 90px -34px rgba(0,0,0,.72); background: var(--bg); }
+.app { height: 100%; display: flex; flex-direction: column; font-size: 13px; }
+
+.toolbar { display: grid; grid-template-rows: auto auto; grid-auto-flow: column; justify-content: start; align-items: center; column-gap: 20px; row-gap: 6px; padding: 9px 16px; border-bottom: 1px solid var(--border); background: linear-gradient(var(--elev), var(--panel)); flex: 0 0 auto; }
+.tb-cell { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.brand { font-weight: 700; letter-spacing: -0.01em; font-size: 14.5px; display: flex; align-items: center; gap: 8px; }
+.brand .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+.tb-badge { font-family: var(--mono); font-size: 10px; padding: 1px 7px; border: 1px solid var(--border-2); border-radius: var(--r-pill); color: var(--muted); }
+.tb-field { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; }
+.tb-field select { padding: 4px 7px; font-size: 12px; }
+select.narrow { width: 104px; }
+.montage { display: flex; gap: 3px; }
+.layout-btn { width: 30px; padding: 4px 0; background: var(--panel-2); border: 1px solid var(--border); color: var(--muted); border-radius: var(--r-sm); cursor: pointer; font: inherit; }
+.layout-btn.active { color: var(--accent-2); border-color: var(--accent); }
+.checkbox { appearance: none; width: 14px; height: 14px; border: 1px solid var(--border-2); border-radius: 4px; background: var(--panel-2); position: relative; cursor: pointer; }
+.checkbox:checked { background: var(--accent); border-color: var(--accent); }
+.checkbox:checked::after { content: "✓"; position: absolute; inset: 0; display: grid; place-items: center; font-size: 10px; color: var(--accent-ink); }
+.views { display: flex; gap: 4px; }
+.panels { display: flex; gap: 5px; }
+
+.dashboard { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) var(--legend-width); grid-template-rows: minmax(0, 1fr) var(--info-height); gap: 1px; background: var(--border); }
+.viewer-area { grid-column: 1; grid-row: 1; display: grid; grid-template-columns: minmax(240px, 36%) minmax(0, 64%); gap: 1px; background: var(--border); min-height: 0; }
+.slice-pane, .surface-pane { position: relative; background: #08060a; overflow: hidden; min-height: 0; }
+
+.slice-pane .slice { position: absolute; inset: 0; background: radial-gradient(38% 46% at 50% 46%, #d3cdc0 0%, #9f988a 42%, #57524a 64%, #1d1a15 82%, #08060a 100%), #08060a; filter: contrast(1.05); }
+.slice-pane .overlay { position: absolute; inset: 0; mix-blend-mode: screen; opacity: .55; background: radial-gradient(9% 12% at 41% 45%, rgba(230,161,58,.9) 0%, transparent 70%), radial-gradient(8% 10% at 60% 52%, rgba(120,190,220,.8) 0%, transparent 70%), radial-gradient(7% 9% at 50% 63%, rgba(139,191,110,.8) 0%, transparent 70%), radial-gradient(6% 8% at 47% 34%, rgba(220,110,150,.8) 0%, transparent 70%); }
+.crosshair-h, .crosshair-v { position: absolute; background: var(--accent); opacity: .72; }
+.crosshair-h { left: 0; right: 0; height: 1px; top: 52%; }
+.crosshair-v { top: 0; bottom: 0; width: 1px; left: 47%; }
+.pane-tag { position: absolute; top: 8px; left: 10px; font-family: var(--mono); font-size: 10px; letter-spacing: .1em; color: var(--muted); text-transform: uppercase; }
+
+.surface-pane canvas { width: 100%; height: 100%; display: block; }
+.gizmo { position: absolute; right: 12px; bottom: 12px; width: 78px; height: 78px; pointer-events: none; opacity: .9; }
+.gizmo .ln { stroke: #5b5240; stroke-width: 1.2; }
+.gizmo .ln.near { stroke: #b0a488; }
+.gizmo .ax { fill: #9a8f78; font: 600 12px var(--mono); text-anchor: middle; dominant-baseline: middle; }
+.gizmo .ax.near { fill: var(--accent-2); }
+.marker { position: absolute; width: 12px; height: 12px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 0 3px rgba(241,210,114,.28), 0 0 8px var(--gold); left: 63%; top: 46%; }
+
+.atlas-legend { grid-column: 2; grid-row: 1; background: var(--panel); padding: 11px 11px 0; min-height: 0; display: flex; flex-direction: column; }
+.legend-title { font-size: 13px; font-weight: 600; }
+.legend-sub { font-size: 11px; color: var(--muted); margin: 2px 0 8px; }
+.legend-actions { display: flex; align-items: center; gap: 5px; margin-bottom: 8px; }
+.legend-count { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.legend-search { width: 100%; margin-bottom: 8px; }
+.legend-scroll { flex: 1 1 auto; overflow-y: auto; min-height: 0; margin-right: -6px; padding-right: 6px; }
+
+.info-panel { grid-column: 1 / -1; grid-row: 2; background: var(--panel); display: grid; min-height: 0; grid-template-columns: minmax(140px,.7fr) minmax(240px,1.7fr) minmax(150px,.9fr) minmax(170px,1fr) minmax(170px,.9fr); }
+.info-col { padding: 12px 15px; overflow: auto; min-width: 0; border-right: 1px solid var(--border); }
+.info-col:last-child { border-right: 0; }
+.info-col h3 { margin: 0 0 9px; font-size: 12px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+.info-col dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 5px 12px; font-size: 12px; line-height: 1.35; }
+.info-col dt { color: var(--muted); text-align: right; }
+.info-col dd { margin: 0; font-family: var(--mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.atlas-report-row { display: grid; grid-template-columns: 74px 40px 1fr; align-items: baseline; gap: 8px; padding: 2px 4px; border-radius: 3px; font-size: 11px; }
+.atlas-report-row:nth-child(odd) { background: rgba(255,240,210,.03); }
+.atlas-report-name { color: var(--muted); font-weight: 600; font-family: var(--mono); }
+.atlas-report-id { text-align: right; font-family: var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.atlas-report-label { color: var(--gold); overflow-wrap: anywhere; }
+.neighborhood { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 10px; margin-bottom: 4px; }
+.neighborhood select { font-size: 10px; padding: 2px 5px; }
+.vf-canvas { display: block; width: 100%; max-width: 168px; aspect-ratio: 1; margin: 2px auto 0; }
+
+.float-panel { position: absolute; top: 12px; right: calc(var(--legend-width) + 18px); z-index: 20; background: color-mix(in srgb, var(--panel) 92%, #000); border: 1px solid var(--border-2); border-radius: var(--r-lg); padding: 13px; width: 250px; box-shadow: 0 20px 46px rgba(0,0,0,.5); backdrop-filter: blur(3px); }
+.float-head { font-weight: 600; margin-bottom: 11px; display: flex; align-items: center; justify-content: space-between; }
+.float-head .x { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 17px; line-height: 1; }
+.chip-row { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 12px; }
+.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 9px; }
+.field > span { font-size: 11px; color: var(--muted); }
+.field .val { font-family: var(--mono); color: var(--accent-2); }
+.dash-wrap { position: relative; }
+
+.foot { margin-top: 40px; padding-top: 18px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
+.foot code { font-family: var(--mono); color: var(--text); }
+
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <nav class="topnav">
+    <span class="home"><a href="index.html">◂ design_demos</a></span>
+    <span class="spacer"></span>
+    <span class="pill-nav">
+      <a class="here" href="refined-b-graphite-amber.html">Graphite + Amber · shipped</a>
+    </span>
+  </nav>
+
+  <p class="eyebrow">Refined Instrument · Variant B</p>
+  <h1 class="title">Graphite&nbsp;+&nbsp;Amber <span class="thin">— a warm lab instrument</span></h1>
+  <p class="lead">Warm graphite neutrals — grey with a deliberate warm bias — under a single <b>amber</b>
+  accent that carries forward today's signature gold. Softer contrast, gentle panel elevation, and a
+  <b>humanist</b> UI face make it the most comfortable of the three for long imaging sessions in a dim
+  room. Data still sits in monospace with tabular figures; the warmth never costs precision.</p>
+
+  <!-- ============ COLOR TOKENS ============ -->
+  <h2 class="sec"><span class="n">01</span> Color tokens</h2>
+  <div class="tokgrid">
+    <div class="sw"><span class="chip" style="background:#14120d"></span><span class="nm"><code>--bg</code><span class="role">app ground</span><span class="hx">#14120d</span></span></div>
+    <div class="sw"><span class="chip" style="background:#1c1913"></span><span class="nm"><code>--panel</code><span class="role">panels / bars</span><span class="hx">#1c1913</span></span></div>
+    <div class="sw"><span class="chip" style="background:#241f17"></span><span class="nm"><code>--panel-2</code><span class="role">inputs / chips</span><span class="hx">#241f17</span></span></div>
+    <div class="sw"><span class="chip" style="background:#2e2818"></span><span class="nm"><code>--elev</code><span class="role">hover / active</span><span class="hx">#2e2818</span></span></div>
+    <div class="sw"><span class="chip" style="background:#ece6d8"></span><span class="nm"><code>--text</code><span class="role">primary ink</span><span class="hx">#ece6d8</span></span></div>
+    <div class="sw"><span class="chip" style="background:#a1957f"></span><span class="nm"><code>--muted</code><span class="role">labels</span><span class="hx">#a1957f</span></span></div>
+    <div class="sw"><span class="chip" style="background:#2b2518"></span><span class="nm"><code>--border</code><span class="role">hairline seam</span><span class="hx">#2b2518</span></span></div>
+    <div class="sw"><span class="chip" style="background:#e6a13a"></span><span class="nm"><code>--accent</code><span class="role">active / focus</span><span class="hx">#e6a13a</span></span></div>
+    <div class="sw"><span class="chip" style="background:#f1d272"></span><span class="nm"><code>--gold</code><span class="role">region labels</span><span class="hx">#f1d272</span></span></div>
+    <div class="sw"><span class="chip" style="background:#e5675a"></span><span class="nm"><code>--danger</code><span class="role">errors</span><span class="hx">#e5675a</span></span></div>
+    <div class="sw"><span class="chip" style="background:#8bbf6e"></span><span class="nm"><code>--ok</code><span class="role">local source</span><span class="hx">#8bbf6e</span></span></div>
+    <div class="sw"><span class="chip" style="background:#d9a24c"></span><span class="nm"><code>--warn</code><span class="role">remote source</span><span class="hx">#d9a24c</span></span></div>
+  </div>
+  <p class="lead" style="margin-top:14px;font-size:14px">The amber accent and the gold region color are
+  deliberately close but distinct — accent leans orange (interaction), region gold stays yellow
+  (meaning). Everything warm is anchored by the same graphite neutral so the palette reads as one family.</p>
+
+  <!-- ============ TYPOGRAPHY ============ -->
+  <h2 class="sec"><span class="n">02</span> Typography — Source Sans 3 + IBM Plex Mono</h2>
+  <div class="type-card">
+    <p class="spec-display">Brainana Viewer</p>
+    <p class="spec-label">Source Sans 3 700 · display &amp; brand · humanist grotesque</p>
+    <p class="spec-ui">Interface text is Source Sans 3 — a warm, humanist face with open counters that stays friendly and readable through a long session.</p>
+    <p class="spec-mono"><span class="k">sub-</span>032309m &nbsp; XYZ&nbsp;<span class="k">=</span>&nbsp;12.40, -8.75, 4.10&nbsp;mm &nbsp; IJK&nbsp;96,128,110 &nbsp; F&nbsp;≥&nbsp;5.00</p>
+    <p class="spec-label" style="margin:8px 0 0">IBM Plex Mono · every coordinate, id &amp; threshold · tabular-nums</p>
+  </div>
+
+  <!-- ============ COMPONENTS ============ -->
+  <h2 class="sec"><span class="n">03</span> Components</h2>
+  <div class="demo">
+    <div class="col">
+      <span class="cap">Buttons</span>
+      <div class="rowline"><button class="btn-primary">Dataset</button><button class="ghost">Close</button><button class="ghost sm">Invert</button></div>
+      <span class="cap">Panel toggles</span>
+      <div class="rowline"><button class="panel-btn active">Atlases</button><button class="panel-btn">Morphology</button><button class="panel-btn">Func Map</button><button class="panel-btn" disabled>Export</button></div>
+      <span class="cap">View presets</span>
+      <div class="rowline"><button class="view-btn">Lat</button><button class="view-btn">Med</button><button class="view-btn">Vent</button><button class="view-btn">Dor</button></div>
+      <span class="cap">Chips &amp; badges</span>
+      <div class="rowline"><button class="chip active">Polar</button><button class="chip">Eccentricity</button><button class="chip">None</button></div>
+      <div class="rowline"><span class="badge local">LOCAL</span><span class="badge remote">REMOTE</span><span class="badge">v0.1.0</span></div>
+      <span class="cap">Sliders &amp; inputs</span>
+      <div class="rowline"><input type="range" min="0" max="1" value="0.62" step="0.01" /><span class="spec-mono" style="font-size:12px">F ≥ 5.00</span></div>
+      <div class="rowline"><input type="text" placeholder="Search ROIs…" style="width:180px" /></div>
+    </div>
+    <div class="col">
+      <span class="cap">Atlas legend row</span>
+      <div class="mini-legend">
+        <div class="legend-row"><span class="legend-check">✓</span><span class="legend-swatch" style="background:hsl(12 62% 54%)"></span><span class="legend-id">3</span><span class="legend-label">area V1</span></div>
+        <div class="legend-row"><span class="legend-check">✓</span><span class="legend-swatch" style="background:hsl(149 66% 49%)"></span><span class="legend-id">17</span><span class="legend-label">area MT / V5</span></div>
+        <div class="legend-row off"><span class="legend-check"> </span><span class="legend-swatch" style="background:hsl(286 62% 59%)"></span><span class="legend-id">42</span><span class="legend-label">area 46d</span></div>
+        <div class="legend-row"><span class="legend-check">✓</span><span class="legend-swatch" style="background:hsl(63 70% 54%)"></span><span class="legend-id">58</span><span class="legend-label">area TEO</span></div>
+      </div>
+      <span class="cap">Info read-out</span>
+      <dl class="mini">
+        <dt>Polar angle</dt><dd>1.82 rad</dd>
+        <dt>Eccentricity</dt><dd>3.60°</dd>
+        <dt>Visual X · Y</dt><dd>-1.40 · 2.90</dd>
+        <dt>Valid voxels</dt><dd>21 / 27</dd>
+      </dl>
+    </div>
+  </div>
+
+  <!-- ============ APPLIED DASHBOARD ============ -->
+  <h2 class="sec"><span class="n">04</span> Applied — the viewer</h2>
+  <p class="applied-note">The identity at true density: the real single-screen dashboard — toolbar,
+  dual viewport (2D slices + 3D surface), the ROI atlas legend, the five-column info read-out, and one
+  open floating panel. Brain imagery is a CSS/Canvas placeholder standing in for the live NiiVue render.</p>
+
+  <div class="viewer-frame">
+    <div class="app">
+      <header class="toolbar">
+        <div class="tb-cell brand"><span class="dot"></span>Brainana&nbsp;Viewer</div>
+        <div class="tb-cell"><span class="tb-badge">v0.1.0</span></div>
+        <div class="tb-cell"><button class="btn-primary" style="padding:5px 12px">Dataset</button></div>
+        <div class="tb-cell"><label class="tb-field">Monkey <select><option>sub-032309m</option></select></label></div>
+        <div class="tb-cell">
+          <label class="tb-field"><input class="checkbox" type="checkbox" checked /> vol <select class="narrow"><option>norm.mgz</option></select></label>
+          <div class="montage"><button class="layout-btn">#</button><button class="layout-btn">▬</button><button class="layout-btn active">▮</button></div>
+        </div>
+        <div class="tb-cell">
+          <label class="tb-field"><input class="checkbox" type="checkbox" checked /> surf <select><option>Inflated</option></select></label>
+          <label class="tb-field"><input class="checkbox" type="checkbox" checked /> LH</label>
+          <label class="tb-field"><input class="checkbox" type="checkbox" checked /> RH</label>
+          <div class="views"><button class="view-btn">Lat</button><button class="view-btn">Med</button><button class="view-btn">Vent</button><button class="view-btn">Dor</button><button class="view-btn">Ant</button><button class="view-btn">Pos</button></div>
+        </div>
+        <div class="tb-cell panels"><button class="panel-btn active">Atlases</button><button class="panel-btn">Morphology</button><button class="panel-btn active">Func Map</button></div>
+        <div class="tb-cell panels"><button class="panel-btn" disabled>Imported</button><button class="panel-btn" disabled>Import</button><button class="panel-btn" disabled>Export</button></div>
+      </header>
+
+      <div class="dash-wrap" style="flex:1 1 auto; min-height:0; display:flex">
+      <main class="dashboard">
+        <div class="viewer-area">
+          <div class="slice-pane">
+            <span class="pane-tag">coronal · norm.mgz</span>
+            <div class="slice"></div><div class="overlay"></div>
+            <div class="crosshair-h"></div><div class="crosshair-v"></div>
+          </div>
+          <div class="surface-pane">
+            <span class="pane-tag">inflated · LH+RH</span>
+            <canvas class="brain-canvas" width="640" height="520"></canvas>
+            <div class="marker"></div>
+            <svg class="gizmo" viewBox="0 0 78 78">
+              <line class="ln" x1="39" y1="39" x2="39" y2="10"></line>
+              <line class="ln near" x1="39" y1="39" x2="64" y2="52"></line>
+              <line class="ln" x1="39" y1="39" x2="14" y2="52"></line>
+              <text class="ax" x="39" y="6">S</text><text class="ax near" x="70" y="55">A</text><text class="ax" x="8" y="55">L</text>
+            </svg>
+          </div>
+        </div>
+
+        <aside class="atlas-legend">
+          <div class="legend-title">CHARM level 4 · ARM4</div>
+          <div class="legend-sub">Click to toggle · Shift-click to isolate</div>
+          <div class="legend-actions">
+            <button class="ghost sm">Show all</button><button class="ghost sm">Hide all</button><button class="ghost sm">Invert</button>
+            <span class="legend-count">58 of 62</span>
+          </div>
+          <input class="legend-search" type="text" placeholder="Search ROIs…" />
+          <div class="legend-scroll" id="legend-rows"></div>
+        </aside>
+
+        <section class="info-panel">
+          <div class="info-col"><h3>Coordinates</h3><dl><dt>XYZ (mm)</dt><dd>12.40, -8.75, 4.10</dd><dt>IJK</dt><dd>96, 128, 110</dd><dt>Hemisphere</dt><dd>Left</dd></dl></div>
+          <div class="info-col"><h3>Atlas</h3>
+            <div class="atlas-report-row"><span class="atlas-report-name">ARM1</span><span class="atlas-report-id">2</span><span class="atlas-report-label">occipital lobe</span></div>
+            <div class="atlas-report-row"><span class="atlas-report-name">ARM3</span><span class="atlas-report-id">11</span><span class="atlas-report-label">visual cortex</span></div>
+            <div class="atlas-report-row"><span class="atlas-report-name">ARM4</span><span class="atlas-report-id">3</span><span class="atlas-report-label">area V1</span></div>
+            <div class="atlas-report-row"><span class="atlas-report-name">ARM6</span><span class="atlas-report-id">27</span><span class="atlas-report-label">V1 · foveal</span></div>
+            <div class="atlas-report-row"><span class="atlas-report-name">D99</span><span class="atlas-report-id">115</span><span class="atlas-report-label">V1</span></div>
+          </div>
+          <div class="info-col"><h3>Surface</h3><dl><dt>Geometry</dt><dd>Inflated</dd><dt>Hemisphere</dt><dd>Left</dd><dt>Vertex</dt><dd>48213</dd><dt>Distance</dt><dd>0.42 mm</dd><dt>Curvature</dt><dd>-0.08</dd><dt>Thickness</dt><dd>2.10 mm</dd></dl></div>
+          <div class="info-col"><h3>Func Map</h3><dl><dt>Polar angle</dt><dd>1.82 rad</dd><dt>Polar F</dt><dd>12.40</dd><dt>Eccentricity</dt><dd>3.60°</dd><dt>Ecc F</dt><dd>9.10</dd><dt>Visual X</dt><dd>-1.40</dd><dt>Visual Y</dt><dd>2.90</dd></dl></div>
+          <div class="info-col"><h3>Visual field</h3>
+            <label class="neighborhood"><span>Neighborhood</span><select><option>3 × 3 × 3</option></select></label>
+            <canvas class="vf-canvas" width="300" height="300"></canvas>
+          </div>
+        </section>
+      </main>
+
+      <div class="float-panel">
+        <div class="float-head">Func Map <button class="x">×</button></div>
+        <div class="chip-row"><button class="chip">None</button><button class="chip active">Polar</button><button class="chip">Eccentricity</button><button class="chip">Phase</button></div>
+        <div class="field"><span>F-threshold <span class="val">F ≥ 5.00</span></span><input type="range" min="0" max="20" value="5" step="0.1" /></div>
+        <div class="field"><span>Opacity <span class="val">0.85</span></span><input type="range" min="0" max="1" value="0.85" step="0.05" /></div>
+        <div class="field"><span>Surface brightness <span class="val">1.25</span></span><input type="range" min="0.5" max="2" value="1.25" step="0.05" /></div>
+      </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <strong>Porting:</strong> the <code>:root</code> token block at the top of this file drops into
+    <code>viewer/src/style.css</code>; the class names here mirror the app's real DOM, so the restyle is a
+    stylesheet-level swap. The canvas mark colors in <code>visualFieldPlot.ts</code> move to match the accent.
+  </div>
+</div>
+
+<script>
+const REGIONS = ["area V1","area V2","area V4","area MT / V5","area TEO","area TE","area 7a","area 46d","area F5","area 3b","area 24c","area STPr","area LIP","area FEF","area AIP","area PGm","area 8Av","area 11l"];
+function roiColor(id, seed=0){ const h=(id*137.508+seed)%360, s=62+(id%3)*8, l=49+(id%4)*5; return `hsl(${h.toFixed(0)} ${s}% ${l}%)`; }
+(function fillLegend(){ const host=document.getElementById('legend-rows'); if(!host) return;
+  REGIONS.forEach((name,i)=>{ const id=3+i*7, off=(i%9===2||i%9===5); const row=document.createElement('div');
+    row.className='legend-row'+(off?' off':'');
+    row.innerHTML=`<span class="legend-check">${off?' ':'✓'}</span><span class="legend-swatch" style="background:${roiColor(id)}"></span><span class="legend-id">${id}</span><span class="legend-label">${name}</span>`;
+    host.appendChild(row); }); })();
+const cssv = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+(function drawBrain(){ const c=document.querySelector('.brain-canvas'); if(!c) return;
+  const ctx=c.getContext('2d'), W=c.width, H=c.height, cx=W*0.52, cy=H*0.5;
+  const g=ctx.createRadialGradient(cx-70,cy-70,30,cx,cy,260);
+  g.addColorStop(0,'#9a9078'); g.addColorStop(.5,'#635948'); g.addColorStop(.82,'#3a3327'); g.addColorStop(1,'#0d0b07');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.ellipse(cx,cy,205,150,-0.12,0,Math.PI*2); ctx.fill();
+  ctx.save(); ctx.beginPath(); ctx.ellipse(cx,cy,205,150,-0.12,0,Math.PI*2); ctx.clip();
+  for(let i=0;i<26;i++){ ctx.beginPath(); const yy=cy-150+i*12; ctx.moveTo(cx-210,yy);
+    for(let x=-210;x<=210;x+=14){ const y=yy+Math.sin((x/38)+i*0.9)*9+Math.cos(x/90)*7; ctx.lineTo(cx+x,y); }
+    ctx.strokeStyle=i%2?'rgba(24,20,13,.42)':'rgba(200,188,166,.14)'; ctx.lineWidth=i%2?5:4; ctx.stroke(); }
+  ctx.restore();
+  ctx.beginPath(); ctx.ellipse(cx,cy,205,150,-0.12,0,Math.PI*2); ctx.strokeStyle=cssv('--accent'); ctx.globalAlpha=.30; ctx.lineWidth=2; ctx.stroke(); ctx.globalAlpha=1; })();
+(function drawVF(){ const c=document.querySelector('.vf-canvas'); if(!c) return;
+  const ctx=c.getContext('2d'), W=c.width, H=c.height, cx=W/2, cy=H/2, R=W*0.44; ctx.clearRect(0,0,W,H);
+  ctx.strokeStyle='rgba(180,170,150,.34)'; ctx.lineWidth=1.4; for(let k=1;k<=4;k++){ ctx.beginPath(); ctx.arc(cx,cy,R*k/4,0,Math.PI*2); ctx.stroke(); }
+  ctx.strokeStyle='rgba(206,196,176,.55)'; ctx.beginPath(); ctx.moveTo(cx-R,cy); ctx.lineTo(cx+R,cy); ctx.moveTo(cx,cy-R); ctx.lineTo(cx,cy+R); ctx.stroke();
+  const acc=cssv('--accent'); ctx.fillStyle=acc;
+  const pts=[[.18,-.34],[.30,-.20],[.10,-.46],[.42,-.28],[.24,-.10],[-.06,-.30],[.36,-.44],[.20,-.28]];
+  pts.forEach(p=>{ ctx.globalAlpha=.75; ctx.beginPath(); ctx.arc(cx+p[0]*R*2,cy+p[1]*R*2,3.2,0,Math.PI*2); ctx.fill(); }); ctx.globalAlpha=1;
+  ctx.strokeStyle=acc; ctx.globalAlpha=.8; ctx.lineWidth=1.6; ctx.beginPath(); ctx.ellipse(cx+.22*R*2,cy-.28*R*2,42,26,-0.5,0,Math.PI*2); ctx.stroke(); ctx.globalAlpha=1;
+  const gold=cssv('--gold'); ctx.strokeStyle='rgba(236,230,216,.6)'; ctx.setLineDash([4,3]); ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(cx+.22*R*2,cy-.28*R*2); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle=gold; ctx.strokeStyle='#1a1610'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(cx+.22*R*2,cy-.28*R*2,5,0,Math.PI*2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle='rgba(236,230,216,.9)'; ctx.font='600 11px "IBM Plex Mono", monospace'; ctx.textAlign='center'; ctx.fillText('Upper',cx,cy-R-6); ctx.fillText('Lower',cx,cy+R+13); })();
+</script>
+</body>
+</html>

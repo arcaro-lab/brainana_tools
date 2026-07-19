@@ -1,0 +1,19 @@
+{
+  "name": "@brainana/viewer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "NiiVue-based viewer for brainana pipeline output. Domain app composed on the shared @brainana/* platform.",
+  "dependencies": {
+    "@brainana/core-server": "*",
+    "@brainana/core-launcher": "*",
+    "@brainana/core-desktop": "*",
+    "@brainana/core-client": "*",
+    "@brainana/ui": "*",
+    "@brainana/niivue-kit": "*",
+    "@brainana/imaging-math": "*",
+    "@niivue/niivue": "^0.69.0",
+    "fflate": "^0.8.2",
+    "nifti-reader-js": "^0.8.0"
+  }
+}
