@@ -1,23 +1,33 @@
 <p align="center">
-  <img src="docs/_static/brainana_logo_side.png" alt="Brainana logo" width="500">
+  <img src="docs/_static/brainana_logo_side.png" alt="Brainana Viewer logo" width="500">
 </p>
 
 # Brainana Viewer
 
-Cross-platform NiiVue viewer for per-subject (`sub-*`) output of the
-[**Brainana**](https://github.com/xingyu-liu/brainana) macaque MRI preprocessing pipeline
+**Brainana Viewer** is a free, cross-platform desktop app for exploring **macaque (monkey) brain MRI** —
+anatomical volumes, 3D cortical surfaces, atlases, and functional maps — from the
+[**Brainana**](https://github.com/xingyu-liu/brainana) preprocessing pipeline
 ([preprint](https://www.biorxiv.org/content/10.64898/2026.06.03.729972v1)).
+Built on [NiiVue](https://github.com/niivue/niivue) + WebGL2; runs on **macOS, Windows, and Linux**
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL--v3-blue.svg)](LICENSE)
 
-> **Status:** **1.0.0 — first public release.** A cross-platform desktop app (Electron) for
-> macOS/Windows/Linux, built and published by a tag-triggered GitHub Actions pipeline. See the
-> [CHANGELOG](CHANGELOG.md) for what's included and the current known limitations.
+## Features
+
+<p align="center">
+  <img src="docs/_static/brainana_viewer_big.png" alt="Brainana Viewer — macaque brain MRI: cortical surface, atlas overlay, and slice views" width="900">
+</p>
+
+- **Volume & surface views** — volume slices and rotatable 3D surface.
+- **Surface morphometry** —  curvature, depth, or thickness on cortex.
+- **Atlases & regions** — automatically overlay brain parcellations and read the region under your cursor.
+- **Functional maps** — retinotopy and somatotopy on both volume and surface.
+- **Local or remote data** — dataset on your computer or a lab workstation.
+- **Compare monkeys** — easily switch subjects to compare across monkeys.
 
 ## Download & install
 
-Grab the app for your operating system from the **[Releases page](../../releases/latest)** — no
-Node, no build, no command line. Pick the file that matches your system:
+Grab the app for your operating system from the **[Releases page](../../releases/latest)** 
 
 | Your system | Download |
 | ----------- | -------- |
@@ -32,6 +42,33 @@ Node, no build, no command line. Pick the file that matches your system:
 
 Not sure which Mac chip you have? **Apple menu → About This Mac.** No account, dataset, or setup
 is required — a demo subject is bundled so you can open the app and look around immediately.
+
+## Quick start
+
+Open the app — a demo monkey is bundled, so you can look around immediately. To load your own data:
+
+1. **Add a dataset.** Click **dataset** (top-left) and point the Viewer at a **brainana output directory**
+   (a folder containing `sub-*` subjects) — either a **local** folder or a **remote** workstation over
+   **SSH/SFTP**. Add more than one if you like.
+2. **Choose a monkey.** Pick a subject from the **monkey** dropdown; the default anatomy + surface view loads.
+3. **Explore.** Use the toolbar and side panel to switch base volume and surface, add an **atlas**, apply
+   **morphology** shading or a **func map**, and tune colormaps. Click anywhere to move the crosshair and
+   read out values.
+4. **Compare.** Reopen the **monkey** dropdown to switch subjects — your view settings carry over.
+
+### Try the demo dataset
+
+A [demo dataset](datasets/demo_viewer) is already bundled in the app. To try the **add a dataset → local folder** flow,
+download just the demo (one macaque subject, `sub-example`) from this repo — needs git ≥ 2.25:
+
+```sh
+git clone --depth 1 --filter=blob:none --sparse https://github.com/xingyu-liu/brainana_tools.git
+cd brainana_tools
+git sparse-checkout set datasets/demo_viewer     # a real brainana output dir
+```
+
+Then in the app, add `brainana_tools/datasets/demo_viewer` as a **local** dataset. On older git,
+clone the whole repo instead: `git clone https://github.com/xingyu-liu/brainana_tools.git`.
 
 ---
 
@@ -75,20 +112,6 @@ platform code.
 
 Cross-package imports use `@brainana/*` specifiers whose `exports` map points at **raw
 source**, so Vite and Node's `.ts` tests resolve identically — no build step in the test path.
-
-## Data sources
-
-The server starts **unbound** and holds a registry of sources you add in-app without a
-relaunch: a **local** folder or a **remote** workstation over SSH/SFTP. Multiple sources
-load simultaneously; each subject is tagged with its `sourceId` and file URLs are
-source-scoped (`/brainana-data/<sourceId>/<rel>`).
-
-## Security
-
-The server binds `127.0.0.1` only. Every `/api/*` and data request requires a per-launch
-**session token** (timing-safe compare) that the launcher generates and the server templates
-into `index.html` at serve time — so the token never appears in a URL or browser history.
-See `packages/core-server/security.mjs`.
 
 ## Citing Brainana
 
