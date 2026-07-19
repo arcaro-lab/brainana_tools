@@ -1,22 +1,8 @@
 # Demo dataset — `sub-example`
 
-A small, bundled `brainana` derivatives tree so you can launch the Viewer against real data
-without preprocessing your own subject. It is a **trimmed** copy of one macaque subject:
-only the files the Viewer actually reads are kept (FastSurfer intermediates, the
-`label/stats/…` directories, and the regenerable render cache are omitted), so it renders
-identically to a full run at a fraction of the size.
+A small, bundled `brainana` output tree so you can launch the Viewer against real data
+without preprocessing your own subject. It is a **trimmed** copy of one macaque subject.
 
-## Run it
-
-From the repo root:
-
-```sh
-npm run server -- --port 5174 --output-dir datasets/demo_viewer   # Terminal 1: API + demo data
-npm run dev:web                                                   # Terminal 2: Vite UI → http://localhost:5173
-```
-
-Or launch the app unbound (`npm start` / `npm run dev:desktop`) and add this folder in-app
-via the local-source picker.
 
 ## What's inside
 
@@ -31,11 +17,3 @@ fastsurfer/sub-example/
     mri/T1.mgz          optional selectable base
     surf/{lh,rh}.*      pial, white, smoothwm, inflated, sphere + curv/sulc/thickness morphometry
 ```
-
-This matches the layout documented in [`docs/data-contract.md`](../../docs/data-contract.md).
-
-## Note on the cache
-
-On first open the Viewer writes derived assets (inflated/sphere surfaces, `.shape.gii`
-morphometry) into `datasets/demo_viewer/.brainana-viewer-cache/`. That directory is
-`.gitignore`d and regenerates automatically, so it never dirties the working tree.
