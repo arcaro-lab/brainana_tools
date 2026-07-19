@@ -6,14 +6,15 @@ productName: Brainana Viewer
 copyright: Brainana
 
 # Where `--publish` uploads the built installers. `provider: github` targets a GitHub Release,
-# uploaded to a DRAFT by default (you review + click Publish). owner/repo are pinned so the fork
-# (origin) is used rather than the `upstream` remote. CHANGE owner to `arcaro-lab` once releases
-# move to the lab repo (requires write access + a token with that access in CI). The release
-# workflow (.github/workflows/release.yml) drives this on a version tag; a plain local
+# uploaded to a DRAFT by default (you review + click Publish). owner/repo are pinned to the lab
+# repo `arcaro-lab/brainana_tools` — that is where 1.0.0+ releases live. The tag-triggered
+# workflow (.github/workflows/release.yml) must therefore run ON arcaro-lab (push the `v*` tag
+# there): its GITHUB_TOKEN only has write access to the repo it runs in, so a run on a fork
+# could not publish here. Requires Actions enabled on arcaro-lab. A plain local
 # `npm run dist:desktop` never publishes (it omits `--publish`). See docs/publishing.md.
 publish:
   provider: github
-  owner: xingyu-liu
+  owner: arcaro-lab
   repo: brainana_tools
 
 # Ad-hoc code-sign the packaged macOS .app (see the hook for the full rationale). Turns

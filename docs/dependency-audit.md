@@ -5,7 +5,7 @@
 > the manifests (`package.json`, `package-lock.json`), build/CI configuration,
 > and the installed `node_modules` tree.
 >
-> **Audit date:** 2026-07-17 · **Repo version:** `brainana-viewer` 0.1.0
+> **Audit date:** 2026-07-18 · **Repo version:** `brainana-viewer` 1.0.0
 
 ---
 
@@ -170,7 +170,31 @@ matching the parent `brainana` pipeline.
 
 ---
 
-## 10. References
+## 10. Vulnerability audit (`npm audit`) — 1.0.0 release
+
+Run at the 1.0.0 release cut (2026-07-18): **10 high-severity advisories, 0 critical / moderate /
+low**. **Every advisory is in the dev/build toolchain or the Electron runtime shell** — none is in
+a first-party runtime library (`@niivue/niivue`, `fflate`, `nifti-reader-js`, `ssh2` are all clean).
+
+| Package | Direct? | Root advisory | Remediation |
+| --- | --- | --- | --- |
+| `electron` | dev | Electron use-after-free / IPC / origin advisories (GHSA-jjp3-…, GHSA-8337-…, GHSA-9wfr-…, …) | `electron@43` — **major, breaking** |
+| `electron-builder` (+ `app-builder-lib`, `dmg-builder`, `@electron/rebuild`, `node-gyp`, `cacache`, `make-fetch-happen`, `tar`) | dev | `node-tar` path-traversal / hardlink-escape chain (GHSA-8qq5-…, GHSA-9ppj-…, GHSA-34x7-…) reached via the packager | `electron-builder@26` — **major, breaking** |
+| `electron-builder-squirrel-windows` | transitive | same tar chain | non-breaking, but **unused** (the Windows target is `nsis`, not squirrel) |
+
+**Decision — accepted risk, no fix applied for 1.0.0:**
+- `npm audit fix` (non-breaking) resolves **nothing**; the only offered path is `npm audit fix
+  --force`, which major-bumps `electron` (33 → 43) and `electron-builder` (25 → 26).
+- Both are **deliberately deferred** to a dedicated Electron-upgrade change so the release is not
+  destabilised by a packaging/runtime major bump right before launch.
+- **Exposure is low:** the `tar`/`node-gyp` chain runs only on the maintainer's build/CI machine
+  during packaging (not shipped to users); the Electron-runtime advisories apply to the shipped
+  shell but are mitigated by the app's own hardening — loopback-only bind, per-launch session
+  token, no arbitrary remote content loaded — and land with the planned Electron upgrade.
+- **Follow-up:** bump Electron + electron-builder to current majors and re-run this audit; expected
+  to clear all 10. Re-run `npm audit` before every release.
+
+## 11. References
 
 **Direct runtime libraries**
 - NiiVue — https://github.com/niivue/niivue · docs: https://niivue.github.io/niivue/

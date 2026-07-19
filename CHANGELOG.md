@@ -2,7 +2,9 @@
 
 All notable changes to Brainana Viewer are documented here.
 
-## [0.1.0] — unreleased
+## [1.0.0] — 2026-07-18
+
+First public release of the Brainana Viewer as a cross-platform desktop app.
 
 ### Added
 - **Core platform layer** (`packages/core-*`), tool-agnostic and reusable:
@@ -61,9 +63,11 @@ All notable changes to Brainana Viewer are documented here.
 - **View preservation**: camera, active overlays (atlas/function/morphology), and display
   settings carry over when switching between subjects, so two monkeys compare 1:1.
 
-### Not yet done
-- Remaining Phase 3 parity: imported-volume **surface projection** and **ROI generation**
-  (staged + unit-tested in `packages/imaging-math/{projection,roiWarp}.ts`; a `projectionClient`
-  + worker exists but is not yet driven from any panel, and ROI generation is unwired);
-  snapshot/state/ZIP export UI. Code signing / notarization (Phase 4 packaging otherwise done);
-  Phase 5 full test/browser matrix + architecture docs.
+### Known limitations
+- **Unsigned installers** — no Apple Developer ID / Windows code-signing certificate yet, so
+  macOS and Windows show a one-time "unidentified developer" prompt on first launch (see README).
+- **Imported-volume surface projection & ROI generation** are staged and unit-tested in
+  `packages/imaging-math/{projection,roiWarp}.ts` (a `projectionClient` + worker exists) but are
+  not yet driven from any panel; snapshot/state/ZIP export UI is likewise not yet wired.
+- The full **cross-browser / automated test matrix** (roadmap Phase 5) is still in progress; the
+  desktop Electron build and the headless server/security/sftp/frontend tests are the current gate.

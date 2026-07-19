@@ -59,8 +59,11 @@ repo; the built apps become **Release assets**. The GitHub repo layout you alrea
    git push -u origin main                                     # upload the source
    ```
 
-   The release workflow reads this `origin` remote to know *which* repo's Releases to publish to
-   — you don't configure the name anywhere else.
+   The Release **destination** is pinned in
+   [../apps/viewer/electron-builder.yml](../apps/viewer/electron-builder.yml) (`publish.owner` /
+   `repo` = `arcaro-lab/brainana_tools`). Push the `v*` tag to **that** repo: the workflow's
+   `GITHUB_TOKEN` can only publish to the repo it runs in, so the tag and the `publish.owner` must
+   name the same repo. Enable **Settings → Actions** on it (step 2).
 
 2. **Make sure Actions is enabled.** On github.com → your repo → **Settings → Actions → General**
    → allow actions. (It's on by default for most accounts.)
@@ -87,22 +90,25 @@ Make sure the bullet list under it reflects what's actually in this release.
 
 ### 2. Set the version number
 
-Edit the `version` field in the root [../package.json](../package.json):
+Run one command — it is the single source of the release version:
 
-```json
-"version": "0.1.0",
+```sh
+npm run set-version 1.0.0        # bump every package.json + regenerate version.mjs + refresh the lockfile
 ```
 
-This one number is the source of truth. `scripts/generate-version.mjs` reads it (plus the git tag
-and commit) at build time and bakes the version + build id into the app, so the About/version
-string users see matches the tag. Use [semver](https://semver.org): `MAJOR.MINOR.PATCH` — bump
-PATCH for fixes (`0.1.1`), MINOR for features (`0.2.0`), MAJOR for breaking changes (`1.0.0`).
+`scripts/set-version.mjs` writes the version into the root and every workspace `package.json`
+(so none drift), regenerates `packages/core-server/version.mjs` (which `generate-version.mjs`
+bakes into the app alongside the git tag/commit, so the About/version string matches the tag),
+and refreshes `package-lock.json` — the last step matters because CI runs `npm ci`, which
+**fails** if the lockfile and `package.json` versions disagree. Use
+[semver](https://semver.org): `MAJOR.MINOR.PATCH` — bump PATCH for fixes (`1.0.1`), MINOR for
+features (`1.1.0`), MAJOR for breaking changes (`2.0.0`).
 
 ### 3. Commit the version + changelog
 
 ```sh
-git add CHANGELOG.md package.json                # stage the release metadata
-git commit -m "Release 0.1.0"                    # record it on main
+git add -A                                       # stage changelog + all bumped manifests + lockfile
+git commit -m "Release 1.0.0"                    # record it on main
 git push origin main                             # upload the commit
 ```
 

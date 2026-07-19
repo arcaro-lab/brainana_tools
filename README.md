@@ -5,19 +5,19 @@
 # Brainana Viewer
 
 Cross-platform NiiVue viewer for per-subject (`sub-*`) output of the
-[**Brainana**](https://github.com/xingyu-liu/brainana) macaque MRI pipeline.
+[**Brainana**](https://github.com/xingyu-liu/brainana) macaque MRI pipeline
+([preprint on bioRxiv](https://www.biorxiv.org/content/10.64898/2026.06.03.729972v1)).
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL--v3-blue.svg)](LICENSE)
 
-> **Status:** Source-first rebuild (fresh `0.x` line). Phases 0–2 complete
-> (foundation, core platform, unified multi-source data path); Phase 3 (NiiVue SPA)
-> substantially built; Phase 4 desktop packaging (Electron) built and verified, with a
-> tag-triggered GitHub Actions release pipeline for Mac/Windows/Linux installers. The full
-> browser/test matrix is still ahead.
+> **Status:** **1.0.0 — first public release.** A cross-platform desktop app (Electron) for
+> macOS/Windows/Linux, built and published by a tag-triggered GitHub Actions pipeline. See the
+> [CHANGELOG](CHANGELOG.md) for what's included and the current known limitations.
 
 ## Download & install
 
-Grab the app for your operating system from the **[Releases page](../../releases/latest)** — no
+Grab the app for your operating system from the
+**[Releases page](https://github.com/arcaro-lab/brainana_tools/releases/latest)** — no
 Node, no build, no command line. Pick the file that matches your system:
 
 | Your system | Download |
@@ -91,9 +91,42 @@ The server binds `127.0.0.1` only. Every `/api/*` and data request requires a pe
 into `index.html` at serve time — so the token never appears in a URL or browser history.
 See `packages/core-server/security.mjs`.
 
+## Citing Brainana
+
+If you use the Brainana Viewer or the Brainana pipeline in your research, please cite the
+Brainana preprint and link the software:
+
+- **Paper:** Brainana — bioRxiv preprint,
+  <https://www.biorxiv.org/content/10.64898/2026.06.03.729972v1>
+- **Pipeline:** <https://github.com/xingyu-liu/brainana>
+- **Viewer:** this repository.
+
+## Acknowledgements & references
+
+The Viewer is built on the shoulders of excellent open-source work. The key pieces:
+
+**Core rendering & data**
+- [**NiiVue**](https://github.com/niivue/niivue) ([docs](https://niivue.github.io/niivue/)) — the WebGL2 neuroimaging engine that draws every slice and surface (BSD-2-Clause).
+- [**fflate**](https://github.com/101arrowz/fflate) — fast zlib/gzip for compressed NIfTI/GIFTI payloads (MIT).
+- [**nifti-reader-js**](https://github.com/rii-mango/NIFTI-Reader-JS) — NIfTI-1/2 header & data parsing (MIT).
+- [**ssh2**](https://github.com/mscdex/ssh2) — pure-JS SSH/SFTP client backing the remote data source (MIT).
+
+**Build, packaging & language**
+- [**TypeScript**](https://www.typescriptlang.org/) (Apache-2.0) ·
+  [**Vite**](https://vitejs.dev/) (MIT) ·
+  [**Electron**](https://www.electronjs.org/) (MIT) ·
+  [**electron-builder**](https://www.electron.build/) (MIT) ·
+  [**Node.js**](https://nodejs.org/) (≥ 22.18).
+
+**Bundled fonts** (self-hosted, no CDN) — under the [SIL Open Font License 1.1](https://openfontlicense.org/)
+- [**Source Sans 3**](https://github.com/adobe-fonts/source-sans) (UI sans-serif) ·
+  [**IBM Plex Mono**](https://github.com/IBM/plex) (numeric/technical labels).
+
+**Standards** — [NIfTI](https://nifti.nimh.nih.gov/) and
+[GIFTI](https://www.nitrc.org/projects/gifti/) neuroimaging formats, and
+[WebGL 2.0](https://www.khronos.org/webgl/).
+
 ## License
 
 Licensed under the **GNU Affero General Public License v3.0** (AGPL-3.0), the same license
-as the parent [**Brainana**](https://github.com/xingyu-liu/brainana) pipeline. See
-[LICENSE](LICENSE). Bundled fonts (Source Sans 3, IBM Plex Mono) are under the SIL Open Font
-License 1.1 ([packages/ui/fonts/](packages/ui/fonts/)).
+as the parent [**Brainana**](https://github.com/xingyu-liu/brainana) pipeline. See [LICENSE](LICENSE).
