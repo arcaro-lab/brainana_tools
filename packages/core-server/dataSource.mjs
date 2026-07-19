@@ -27,15 +27,32 @@ export function contentTypeFor(name) {
   return 'application/octet-stream'
 }
 
-// Parse an HTTP Range header against a known total size.
-// Returns { start, end } (inclusive) or null when there is no/!satisfiable range.
+// Parse an HTTP Range header against a known total size (RFC 7233 single-range).
+// Returns { start, end } (inclusive) or null when there is no/unsatisfiable range.
+//   bytes=2-5   -> { start: 2, end: 5 }              (explicit range)
+//   bytes=500-  -> { start: 500, end: totalSize-1 }  (open-ended)
+//   bytes=-500  -> last 500 bytes                    (suffix; empty start)
 export function parseRange(rangeHeader, totalSize) {
   if (!rangeHeader) return null
   const m = /bytes=(\d*)-(\d*)/.exec(rangeHeader)
   if (!m) return null
-  const start = m[1] ? Number(m[1]) : 0
-  const end = m[2] ? Number(m[2]) : totalSize - 1
-  if (Number.isNaN(start) || Number.isNaN(end) || start > end || start < 0) return null
+  const hasStart = m[1] !== ''
+  const hasEnd = m[2] !== ''
+  if (!hasStart && !hasEnd) return null // "bytes=-" names no range
+  let start
+  let end
+  if (!hasStart) {
+    // Suffix range: the final N bytes of the resource.
+    const suffix = Number(m[2])
+    if (!Number.isFinite(suffix) || suffix <= 0) return null
+    start = Math.max(0, totalSize - suffix)
+    end = totalSize - 1
+  } else {
+    start = Number(m[1])
+    end = hasEnd ? Number(m[2]) : totalSize - 1
+  }
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start > end || start < 0) return null
+  if (start >= totalSize) return null // beyond EOF -> unsatisfiable (416)
   return { start, end: Math.min(end, totalSize - 1) }
 }
 

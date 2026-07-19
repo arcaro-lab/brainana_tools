@@ -48,10 +48,15 @@ async function startOnFreePort(options, preferred) {
   return startServer({ ...options, port: 0 }) // last resort: ephemeral port
 }
 
+// Select the OS command that opens a URL in the default browser. Pure + platform-injectable
+// so the per-OS dispatch is unit-testable on any host. Returns [cmd, args].
+export function browserCommand(url, platform = process.platform) {
+  return platform === 'darwin' ? ['open', [url]] : platform === 'win32' ? ['cmd', ['/c', 'start', '', url]] : ['xdg-open', [url]]
+}
+
 // Open a URL in the default browser without blocking.
 function openBrowser(url) {
-  const platform = process.platform
-  const [cmd, args] = platform === 'darwin' ? ['open', [url]] : platform === 'win32' ? ['cmd', ['/c', 'start', '', url]] : ['xdg-open', [url]]
+  const [cmd, args] = browserCommand(url)
   try {
     const child = spawn(cmd, args, { stdio: 'ignore', detached: true })
     child.on('error', () => console.log(`Open your browser to: ${url}`))

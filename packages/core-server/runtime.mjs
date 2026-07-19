@@ -37,8 +37,8 @@ const SCOPED_DATA_PREFIX_RE = new RegExp(`^/brainana-data/${SOURCE_ID_PATTERN}/`
 // user's home directory when no path (or a non-absolute one) is given. Directories only,
 // dotfiles skipped, sorted naturally — mirrors localSource.listDirectories in spirit but
 // operates on absolute paths since there is no source root to scope against yet.
-function browseDir(requested) {
-  const current = requested && path.isAbsolute(requested) ? path.resolve(requested) : os.homedir()
+export function browseDir(requested, { homedir = os.homedir() } = {}) {
+  const current = requested && path.isAbsolute(requested) ? path.resolve(requested) : homedir
   if (!exists(current)) throw Object.assign(new Error('Directory not found'), { statusCode: 404 })
   let stat
   try {
@@ -86,13 +86,19 @@ export function readSshHosts() {
   } catch {
     return [] // no config, or not readable
   }
+  return parseSshConfig(text)
+}
+
+// Pure parser for ~/.ssh/config text (split out so it's testable without touching the
+// filesystem or $HOME). Splits on LF or CRLF so Windows-authored configs parse identically.
+export function parseSshConfig(text) {
   const hosts = []
   let current = null // { host, hostName, user, port } for the block being read
   const flush = () => {
     if (current) hosts.push(current)
     current = null
   }
-  for (const rawLine of text.split(/\r?\n/)) {
+  for (const rawLine of String(text).split(/\r?\n/)) {
     const line = rawLine.trim()
     if (!line || line.startsWith('#')) continue
     // Keyword and value split on whitespace or a single '=' (both are valid ssh_config syntax).

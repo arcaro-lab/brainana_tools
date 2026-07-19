@@ -4,9 +4,10 @@ import os from 'node:os'
 import path from 'node:path'
 
 // Per-OS cache directory: %LOCALAPPDATA% (win) / ~/Library/Caches (mac) / $XDG_CACHE_HOME
-// or ~/.cache (linux), under an app-specific subdirectory.
-export function cacheDir(app = 'BrainanaViewer') {
-  if (process.platform === 'win32') return path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), app)
-  if (process.platform === 'darwin') return path.join(os.homedir(), 'Library', 'Caches', app)
-  return path.join(process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache'), app)
+// or ~/.cache (linux), under an app-specific subdirectory. The platform/env/homedir are
+// injectable so each OS branch is unit-testable on any host; defaults preserve real behavior.
+export function cacheDir(app = 'BrainanaViewer', { platform = process.platform, env = process.env, homedir = os.homedir() } = {}) {
+  if (platform === 'win32') return path.join(env.LOCALAPPDATA || path.join(homedir, 'AppData', 'Local'), app)
+  if (platform === 'darwin') return path.join(homedir, 'Library', 'Caches', app)
+  return path.join(env.XDG_CACHE_HOME || path.join(homedir, '.cache'), app)
 }
