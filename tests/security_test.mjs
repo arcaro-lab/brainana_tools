@@ -16,7 +16,8 @@ assert.equal(token.length, 64, 'token is 32 bytes hex')
 ok('generateSessionToken returns 64-hex chars')
 
 assert.equal(timingSafeEqual(token, token), true)
-assert.equal(timingSafeEqual(token, token.slice(0, -1) + '0'), false)
+// Swap the last hex char for a guaranteed-different one (never equal, so never flaky).
+assert.equal(timingSafeEqual(token, token.slice(0, -1) + (token.endsWith('0') ? '1' : '0')), false)
 assert.equal(timingSafeEqual(token, ''), false)
 assert.equal(timingSafeEqual('', ''), true)
 assert.equal(timingSafeEqual(token, 'short'), false, 'length mismatch is safely false, not a throw')

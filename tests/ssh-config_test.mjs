@@ -1,6 +1,7 @@
 // Unit test for readSshHosts(): parse ~/.ssh/config into the recall-dropdown host list.
-// Points HOME at a temp dir (os.homedir() honours $HOME on this platform) so the parser reads a
-// controlled fixture. Runs in a child process (see scripts/run-tests.mjs), so mutating HOME is safe.
+// Points the home dir at a temp dir so the parser reads a controlled fixture. os.homedir()
+// reads $HOME on POSIX but %USERPROFILE% on Windows, so we set BOTH (see withHome). Runs in a
+// child process (see scripts/run-tests.mjs), so mutating the environment is safe.
 import assert from 'node:assert/strict'
 import fsp from 'node:fs/promises'
 import os from 'node:os'
@@ -14,6 +15,13 @@ const ok = (name) => {
 }
 
 const originalHome = process.env.HOME
+const originalUserProfile = process.env.USERPROFILE
+// Restore an env var to its original value, deleting it when it was originally unset
+// (assigning `undefined` would set the literal string "undefined").
+const restoreEnv = (key, value) => {
+  if (value === undefined) delete process.env[key]
+  else process.env[key] = value
+}
 async function withHome(configText, fn) {
   const home = await fsp.mkdtemp(path.join(os.tmpdir(), 'brainana-ssh-'))
   try {
@@ -21,10 +29,14 @@ async function withHome(configText, fn) {
       await fsp.mkdir(path.join(home, '.ssh'), { recursive: true })
       await fsp.writeFile(path.join(home, '.ssh', 'config'), configText)
     }
+    // os.homedir() reads $HOME on POSIX and %USERPROFILE% on Windows — set both so the
+    // fixture is used cross-platform.
     process.env.HOME = home
+    process.env.USERPROFILE = home
     return fn()
   } finally {
-    process.env.HOME = originalHome
+    restoreEnv('HOME', originalHome)
+    restoreEnv('USERPROFILE', originalUserProfile)
     await fsp.rm(home, { recursive: true, force: true })
   }
 }
