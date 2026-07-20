@@ -1,19 +1,29 @@
 # Demo dataset — `sub-example`
 
-A small, bundled `brainana` output tree so you can launch the Viewer against real data
-without preprocessing your own subject. It is a **trimmed** copy of one macaque subject.
+A small, **trimmed** `brainana` output tree for one macaque subject — enough to launch the
+Brainana Viewer against real data without preprocessing your own.
 
+## ▶ Use it in the Viewer
 
-## What's inside
+**1. Download this folder.** From the repo root — needs git ≥ 2.25:
+
+```sh
+git clone --depth 1 --filter=blob:none --sparse https://github.com/arcaro-lab/brainana_tools.git
+cd brainana_tools
+git sparse-checkout set datasets/demo_viewer
+```
+
+On older git, clone the whole repo instead: `git clone https://github.com/arcaro-lab/brainana_tools.git`.
+
+**2. Add it as a local dataset.** In the Viewer, open the **dataset** panel. Under **local
+dataset**, browse to (or paste the path of) the `demo_viewer` folder and click **add**:
 
 ```
-sub-example/ses-001/anat/atlas_space-fsnative/
-    atlas-*_space-fsnative_*.nii.gz              atlas label + retinotopy/somatotopy volumes
-    atlas-*_space-fsnative_hemi-{L,R}_*.func.gii  surface overlays
-    atlas-*.tsv                                  region LUTs
-    *.json  *.bib  *.md                          sidecars (provenance; not read by the Viewer)
-fastsurfer/sub-example/
-    mri/norm.mgz        required default base volume (fsnative)
-    mri/T1.mgz          optional selectable base
-    surf/{lh,rh}.*      pial, white, smoothwm, inflated, sphere + curv/sulc/thickness morphometry
+datasets/demo_viewer/   ← add THIS folder
+├─ sub-example/
+└─ fastsurfer/
 ```
+
+> [!IMPORTANT]
+> Add the **`demo_viewer` folder itself** — the level that *contains* `sub-example/`, not one of
+> the subject folders inside it.

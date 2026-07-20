@@ -4,11 +4,12 @@
 
 # Brainana Viewer
 
-**Brainana Viewer** is a free, cross-platform desktop app for exploring **macaque (monkey) brain MRI** —
-anatomical volumes, 3D cortical surfaces, atlases, and functional maps — from the
+**Brainana Viewer** is a free, cross-platform desktop app for exploring **macaque (monkey) brain MRI**.
+
+View anatomical volumes, 3D cortical surfaces, atlases, and functional maps produced by the
 [**Brainana**](https://github.com/xingyu-liu/brainana) preprocessing pipeline
 ([preprint](https://www.biorxiv.org/content/10.64898/2026.06.03.729972v1)).
-Built on [NiiVue](https://github.com/niivue/niivue) + WebGL2; runs on **macOS, Windows, and Linux**
+Built on [NiiVue](https://github.com/niivue/niivue) + WebGL2, it runs on **macOS, Windows, and Linux**.
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL--v3-blue.svg)](LICENSE)
 
@@ -19,7 +20,7 @@ Built on [NiiVue](https://github.com/niivue/niivue) + WebGL2; runs on **macOS, W
 </p>
 
 - **Volume & surface views** — volume slices and rotatable 3D surface.
-- **Surface morphometry** —  curvature, depth, or thickness on cortex.
+- **Surface morphometry** — curvature, depth, or thickness on cortex.
 - **Atlases & regions** — automatically overlay brain parcellations and read the region under your cursor.
 - **Functional maps** — retinotopy and somatotopy on both volume and surface.
 - **Local or remote data** — dataset on your computer or a lab workstation.
@@ -27,7 +28,7 @@ Built on [NiiVue](https://github.com/niivue/niivue) + WebGL2; runs on **macOS, W
 
 ## Download & install
 
-Grab the app for your operating system from the **[Releases page](../../releases/latest)** 
+Grab the app for your operating system from the **[Releases page](../../releases/latest)**.
 
 | Your system | Download |
 | ----------- | -------- |
@@ -36,69 +37,70 @@ Grab the app for your operating system from the **[Releases page](../../releases
 | **Windows** | `Brainana Viewer Setup *.exe` |
 | **Linux** | `Brainana Viewer-*.AppImage` or `brainana-viewer_*_amd64.deb` |
 
-> **First launch:** the app is currently **unsigned**, so macOS and Windows show a one-time
-> "unidentified developer" prompt. On macOS **right-click → Open**; on Windows choose **More info
-> → Run anyway**. Linux has no prompt.
+> **First launch:** the app is currently **unsigned**, so the first time you open it macOS and
+> Windows warn that it's from an unidentified developer. You only need to clear this once per app.
+>
+> - **macOS:** double-click the app; when it's blocked, open **System Settings → Privacy &
+>   Security**, scroll down to the **Security** section, and click **Open Anyway** (confirm with
+>   your password). *(On macOS Sequoia and later, the old right-click → Open shortcut no longer
+>   works — use this route.)*
+> - **Windows:** on the SmartScreen prompt choose **More info → Run anyway**.
+> - **Linux:** no prompt.
 
-Not sure which Mac chip you have? **Apple menu → About This Mac.** No account, dataset, or setup
-is required — a demo subject is bundled so you can open the app and look around immediately.
+Not sure which Mac chip you have? Check **Apple menu → About This Mac.**
+
+No account or sign-up is required. The app opens to a welcome screen with nothing loaded yet —
+add a dataset to begin (see [Quick start](#quick-start)).
 
 ## Quick start
 
-Open the app — a demo monkey is bundled, so you can look around immediately. To load your own data:
+When you open the app it starts on a welcome screen — no data is loaded yet. Add a dataset to begin:
 
-1. **Add a dataset.** Click **dataset** (top-left) and point the Viewer at a **brainana output directory**
-   (a folder containing `sub-*` subjects) — either a **local** folder or a **remote** workstation over
-   **SSH/SFTP**. Add more than one if you like.
+1. **Add a dataset.** Click **dataset** (top-left) and point the Viewer at a **brainana output
+   directory** — a folder containing `sub-*` subjects. This can be a **local** folder or a
+   **remote** workstation over **SSH/SFTP**. Add more than one if you like.
 2. **Choose a monkey.** Pick a subject from the **monkey** dropdown; the default anatomy + surface view loads.
-3. **Explore.** Use the toolbar and side panel to switch base volume and surface, add an **atlas**, apply
-   **morphology** shading or a **func map**, and tune colormaps. Click anywhere to move the crosshair and
-   read out values.
+3. **Explore.** Use the toolbar and side panel to switch the base volume and surface, add an
+   **atlas**, apply **morphology** shading or a **func map**, and tune colormaps. Click anywhere
+   to move the crosshair and read out values.
 4. **Compare.** Reopen the **monkey** dropdown to switch subjects — your view settings carry over.
 
 ### Try the demo dataset
 
-A [demo dataset](datasets/demo_viewer) is already bundled in the app. To try the **add a dataset → local folder** flow,
-download just the demo (one macaque subject, `sub-example`) from this repo — needs git ≥ 2.25:
+No dataset of your own yet? A small [demo subject](datasets/demo_viewer) (`sub-example`) lives in
+this repo. Grab just the `demo_viewer` folder and add it as a local dataset to try the app. This
+needs git ≥ 2.25:
 
 ```sh
-git clone --depth 1 --filter=blob:none --sparse https://github.com/xingyu-liu/brainana_tools.git
+git clone --depth 1 --filter=blob:none --sparse https://github.com/arcaro-lab/brainana_tools.git
 cd brainana_tools
 git sparse-checkout set datasets/demo_viewer     # a real brainana output dir
 ```
 
-Then in the app, add `brainana_tools/datasets/demo_viewer` as a **local** dataset. On older git,
-clone the whole repo instead: `git clone https://github.com/xingyu-liu/brainana_tools.git`.
+Then, in the app, open the **dataset** panel and, under **local dataset**, add the `demo_viewer`
+folder:
+
+```
+brainana_tools/
+└─ datasets/
+   └─ demo_viewer/   ← add THIS folder
+      ├─ sub-example/
+      └─ fastsurfer/
+```
+
+> [!IMPORTANT]
+> Add the **`demo_viewer` folder itself** — the level that *contains* `sub-example/`, not one of
+> the subject folders inside it.
+
+On older git, clone the whole repo instead: `git clone https://github.com/arcaro-lab/brainana_tools.git`.
 
 ---
 
-## For developers
-
-Everything below is for building and contributing to the Viewer, not for using the app.
-
-**Requirements:** **Node ≥ 22.18** (unit tests import `.ts` sources directly via Node type
-stripping) and a WebGL2-capable browser (Chrome/Edge baseline; Firefox/Safari supported).
-
-```sh
-npm install                                                       # workspace deps (single lockfile)
-npm run server -- --port 5174 --output-dir datasets/demo_viewer   # Terminal 1: API + bundled demo data
-npm run dev:web                                                   # Terminal 2: Vite UI → http://localhost:5173
-```
-
-Open the URL Vite prints and select `sub-example`. Other common commands:
-
-```sh
-npm test               # headless: domain math, server, security, sftp, built-frontend token injection, core-purity guard
-npm start              # launch the Viewer: free port, 127.0.0.1 bind, open browser
-npm run dev:desktop    # launch as a native Electron app (bundled Chromium)
-npm run dist:desktop   # build desktop installers for THIS OS → apps/viewer/release/
-```
-
 ## Architecture
 
-An **npm-workspaces monorepo**: tool-agnostic shared `packages/*` consumed by per-tool
-`apps/*`. Adding a sibling tool (Aligner, Editor) means a new `apps/<tool>/` — no duplicated
-platform code.
+An **npm-workspaces monorepo**: tool-agnostic shared `packages/*` consumed by per-tool `apps/*`.
+Adding a sibling tool (Aligner, Editor) means a new `apps/<tool>/`, with no duplicated platform
+code.
 
 | Package             | Responsibility                                                        |
 | ------------------- | --------------------------------------------------------------------- |
@@ -110,17 +112,16 @@ platform code.
 | `imaging-math`      | Pure headless math (ROI warp, volume→surface projection)              |
 | `apps/viewer`       | The Viewer: SPA + manifest/FreeSurfer server + launch/desktop entries |
 
-Cross-package imports use `@brainana/*` specifiers whose `exports` map points at **raw
-source**, so Vite and Node's `.ts` tests resolve identically — no build step in the test path.
+Cross-package imports use `@brainana/*` specifiers whose `exports` map points at **raw source**.
+That way Vite and Node's `.ts` tests resolve identically, with no build step in the test path.
 
 ## Citing Brainana
 
 If you use the Brainana Viewer or the Brainana pipeline in your research, please cite the
 Brainana preprint and link the software:
 
-- **Paper:** Brainana — preprint,
-  <https://www.biorxiv.org/content/10.64898/2026.06.03.729972v1>
-- **Pipeline:** <https://github.com/xingyu-liu/brainana>
+- **Paper:** [preprint](https://www.biorxiv.org/content/10.64898/2026.06.03.729972v1)
+- **Preprocessing pipeline:** [![xingyu-liu/brainana on GitHub](https://img.shields.io/badge/GitHub-xingyu--liu%2Fbrainana-181717?logo=github)](https://github.com/xingyu-liu/brainana)
 - **Viewer:** this repository.
 
 ## Acknowledgements & references
@@ -128,25 +129,20 @@ Brainana preprint and link the software:
 The Viewer is built on the shoulders of excellent open-source work. The key pieces:
 
 **Core rendering & data**
-- [**NiiVue**](https://github.com/niivue/niivue) ([docs](https://niivue.github.io/niivue/)) — the WebGL2 neuroimaging engine that draws every slice and surface (BSD-2-Clause).
-- [**fflate**](https://github.com/101arrowz/fflate) — fast zlib/gzip for compressed NIfTI/GIFTI payloads (MIT).
-- [**nifti-reader-js**](https://github.com/rii-mango/NIFTI-Reader-JS) — NIfTI-1/2 header & data parsing (MIT).
-- [**ssh2**](https://github.com/mscdex/ssh2) — pure-JS SSH/SFTP client backing the remote data source (MIT).
+- [**NiiVue**](https://github.com/niivue/niivue) — the WebGL2 neuroimaging engine that draws every slice and surface.
+- [**fflate**](https://github.com/101arrowz/fflate) — fast zlib/gzip for compressed NIfTI/GIFTI payloads.
+- [**nifti-reader-js**](https://github.com/rii-mango/NIFTI-Reader-JS) — NIfTI-1/2 header & data parsing.
+- [**ssh2**](https://github.com/mscdex/ssh2) — pure-JS SSH/SFTP client backing the remote data source.
 
 **Build, packaging & language**
-- [**TypeScript**](https://www.typescriptlang.org/) (Apache-2.0) ·
-  [**Vite**](https://vitejs.dev/) (MIT) ·
-  [**Electron**](https://www.electronjs.org/) (MIT) ·
-  [**electron-builder**](https://www.electron.build/) (MIT) ·
-  [**Node.js**](https://nodejs.org/) (≥ 22.18).
+- [**TypeScript**](https://www.typescriptlang.org/)
+- [**Vite**](https://vitejs.dev/)
+- [**Electron**](https://www.electronjs.org/)
+- [**electron-builder**](https://www.electron.build/)
+- [**Node.js**](https://nodejs.org/) (≥ 22.18)
 
-**Bundled fonts** (self-hosted, no CDN) — under the [SIL Open Font License 1.1](https://openfontlicense.org/)
-- [**Source Sans 3**](https://github.com/adobe-fonts/source-sans) (UI sans-serif) ·
-  [**IBM Plex Mono**](https://github.com/IBM/plex) (numeric/technical labels).
-
-**Standards** — [NIfTI](https://nifti.nimh.nih.gov/) and
-[GIFTI](https://www.nitrc.org/projects/gifti/) neuroimaging formats, and
-[WebGL 2.0](https://www.khronos.org/webgl/).
+**Standards**
+- [WebGL 2.0](https://www.khronos.org/webgl/).
 
 ## License
 
