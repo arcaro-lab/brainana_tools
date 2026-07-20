@@ -45,7 +45,10 @@ Grab the app for your operating system from the **[Releases page](../../releases
 >   your password). *(On macOS Sequoia and later, the old right-click → Open shortcut no longer
 >   works — use this route.)*
 > - **Windows:** on the SmartScreen prompt choose **More info → Run anyway**.
-> - **Linux:** no prompt.
+> - **Linux (AppImage):** if double-clicking shows *"no application installed for AppImage… files"*,
+>   the file just needs the executable bit — right-click → **Properties → Permissions → Allow
+>   executing file as program**, or run `chmod +x Brainana-Viewer-*.AppImage && ./Brainana-Viewer-*.AppImage`.
+>   *(The `.deb` needs none of this.)*
 
 Not sure which Mac chip you have? Check **Apple menu → About This Mac.**
 
@@ -95,25 +98,6 @@ brainana_tools/
 On older git, clone the whole repo instead: `git clone https://github.com/arcaro-lab/brainana_tools.git`.
 
 ---
-
-## Architecture
-
-An **npm-workspaces monorepo**: tool-agnostic shared `packages/*` consumed by per-tool `apps/*`.
-Adding a sibling tool (Aligner, Editor) means a new `apps/<tool>/`, with no duplicated platform
-code.
-
-| Package             | Responsibility                                                        |
-| ------------------- | --------------------------------------------------------------------- |
-| `core-server`       | HTTP runtime, security, DataSource registry (local + SFTP), cache, export |
-| `core-launcher`     | `bootServer()` (token → free port → server) + `launch()` (opens browser)   |
-| `core-desktop`      | Electron shell: `runDesktop()` loads the loopback URL natively        |
-| `core-client`       | Browser platform: runtime/source/filesystem clients, session, WebGL2 gate |
-| `ui` / `niivue-kit` | Design-token theme + DOM helpers / generic NiiVue helpers             |
-| `imaging-math`      | Pure headless math (ROI warp, volume→surface projection)              |
-| `apps/viewer`       | The Viewer: SPA + manifest/FreeSurfer server + launch/desktop entries |
-
-Cross-package imports use `@brainana/*` specifiers whose `exports` map points at **raw source**.
-That way Vite and Node's `.ts` tests resolve identically, with no build step in the test path.
 
 ## Citing Brainana
 
